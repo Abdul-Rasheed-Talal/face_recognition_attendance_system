@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from datetime import datetime, timezone, timedelta
@@ -280,8 +281,12 @@ async def websocket_attendance_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+# Mount benchmarks directory if present
+benchmarks_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "benchmarks")
+if os.path.exists(benchmarks_dir):
+    app.mount("/benchmarks", StaticFiles(directory=benchmarks_dir), name="benchmarks")
+
 # Mount built production frontend if present
-from fastapi.staticfiles import StaticFiles
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend_spa")
