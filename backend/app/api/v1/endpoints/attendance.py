@@ -208,3 +208,4 @@ async def update_attendance_status(
         verification_method=r.verification_method,
         notes=r.notes,
     )
+

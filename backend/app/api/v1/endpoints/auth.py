@@ -75,3 +75,4 @@ async def register_initial_admin(admin_data: UserCreate, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(admin)
     return admin
+

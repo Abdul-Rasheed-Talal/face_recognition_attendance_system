@@ -10,13 +10,21 @@ import {
   Upload,
   AlertCircle,
   X,
-  Sparkles,
+  LogIn,
+  Shield,
 } from 'lucide-react';
-import { Student } from '../types';
-import { api } from '../services/api';
+import { Student, User } from '../types';
+import { api, DepartmentItem, ClassItem } from '../services/api';
 
-export const StudentsView: React.FC = () => {
+interface StudentsViewProps {
+  currentUser: User | null;
+  onOpenLogin: () => void;
+}
+
+export const StudentsView: React.FC<StudentsViewProps> = ({ currentUser, onOpenLogin }) => {
   const [students, setStudents] = useState<Student[]>([]);
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -28,13 +36,35 @@ export const StudentsView: React.FC = () => {
   const [newRoll, setNewRoll] = useState('');
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Face Upload Form
   const [faceFile, setFaceFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [enrollMsg, setEnrollMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isEnrolling, setIsEnrolling] = useState(false);
+
+  // Load departments and classes
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        const [deptList, classList] = await Promise.all([
+          api.listDepartments().catch(() => []),
+          api.listClasses().catch(() => []),
+        ]);
+        setDepartments(deptList);
+        setClasses(classList);
+        if (deptList.length > 0) setSelectedDeptId(deptList[0].id);
+        if (classList.length > 0) setSelectedClassId(classList[0].id);
+      } catch (e) {
+        console.debug('Failed to load academic metadata:', e);
+      }
+    };
+    loadMetadata();
+  }, []);
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -53,21 +83,48 @@ export const StudentsView: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const handleOpenAddModal = () => {
+    if (!currentUser) {
+      onOpenLogin();
+      return;
+    }
+    setFormError(null);
+    setIsAddModalOpen(true);
+  };
+
+  const handleOpenEnrollModal = (student: Student) => {
+    if (!currentUser) {
+      onOpenLogin();
+      return;
+    }
+    setSelectedStudentForEnroll(student);
+    setFaceFile(null);
+    setPreviewUrl(null);
+    setEnrollMsg(null);
+  };
+
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setIsSubmitting(true);
+
+    if (!currentUser) {
+      setFormError('Authentication required. Please sign in as an Administrator or Teacher.');
+      setIsSubmitting(false);
+      onOpenLogin();
+      return;
+    }
+
     try {
-      // Find class or session to link
-      const sessions = await api.listSessions();
-      const defaultDept = 'CS';
-      const defaultClass = sessions[0]?.class_name || 'BS CS 2023';
+      const deptId = selectedDeptId || (departments[0]?.id || 'CS');
+      const classId = selectedClassId || (classes[0]?.id || 'BS CS 2023');
 
       await api.createStudent({
         roll_number: newRoll.trim(),
         full_name: newName.trim(),
         email: newEmail.trim(),
-        department_id: defaultDept,
-        class_id: defaultClass,
+        department_id: deptId,
+        class_id: classId,
       });
 
       setIsAddModalOpen(false);
@@ -76,7 +133,14 @@ export const StudentsView: React.FC = () => {
       setNewEmail('');
       fetchStudents();
     } catch (err: any) {
-      setFormError(err.message || 'Failed to create student.');
+      const msg = err.message || 'Failed to create student.';
+      if (msg.includes('Authentication required') || msg.includes('token expired') || msg.includes('401')) {
+        setFormError('Authentication required. Your session may have expired. Please click Sign In below.');
+      } else {
+        setFormError(msg);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -92,6 +156,15 @@ export const StudentsView: React.FC = () => {
   const handleEnrollSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentForEnroll || !faceFile) return;
+
+    if (!currentUser) {
+      setEnrollMsg({
+        type: 'error',
+        text: 'Authentication required. Please sign in as an Administrator or Teacher to enroll biometric faces.',
+      });
+      onOpenLogin();
+      return;
+    }
 
     setIsEnrolling(true);
     setEnrollMsg(null);
@@ -119,6 +192,10 @@ export const StudentsView: React.FC = () => {
   };
 
   const handleDeleteTemplate = async (student: Student) => {
+    if (!currentUser) {
+      onOpenLogin();
+      return;
+    }
     if (!confirm(`Remove biometric template for ${student.full_name}?`)) return;
     try {
       await api.deleteFaceTemplates(student.id);
@@ -130,6 +207,30 @@ export const StudentsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Unauthenticated Staff Banner */}
+      {!currentUser && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-950/70 to-slate-800 border border-indigo-700/60 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+              <Shield className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white">Staff Authentication Required for Management</div>
+              <p className="text-[11px] text-slate-300">
+                You are viewing the student directory as Guest. Please sign in to register students and enroll face templates.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOpenLogin}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/30 transition shrink-0"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In (Admin / Teacher)</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-800/80 border border-slate-700/70 p-4 rounded-2xl">
         <div className="relative w-full sm:w-80">
@@ -144,7 +245,7 @@ export const StudentsView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={handleOpenAddModal}
           className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-indigo-600/20 transition"
         >
           <UserPlus className="w-4 h-4" />
@@ -206,12 +307,7 @@ export const StudentsView: React.FC = () => {
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => {
-                            setSelectedStudentForEnroll(student);
-                            setFaceFile(null);
-                            setPreviewUrl(null);
-                            setEnrollMsg(null);
-                          }}
+                          onClick={() => handleOpenEnrollModal(student)}
                           className="flex items-center gap-1 px-3 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/40 rounded-lg text-xs font-medium transition"
                           title="Enroll or Update Face Image"
                         >
@@ -254,8 +350,20 @@ export const StudentsView: React.FC = () => {
             </h3>
 
             {formError && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-xs text-rose-300">
-                {formError}
+              <div className="mb-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-xs text-rose-300 flex flex-col gap-2">
+                <span>{formError}</span>
+                {formError.includes('Authentication required') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddModalOpen(false);
+                      onOpenLogin();
+                    }}
+                    className="self-start px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold"
+                  >
+                    Click Here to Sign In
+                  </button>
+                )}
               </div>
             )}
 
@@ -296,11 +404,52 @@ export const StudentsView: React.FC = () => {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Department</label>
+                  <select
+                    value={selectedDeptId}
+                    onChange={(e) => setSelectedDeptId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {departments.length === 0 ? (
+                      <option value="">CS & IT Department</option>
+                    ) : (
+                      departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.code} - {d.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Class Section</label>
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {classes.length === 0 ? (
+                      <option value="">BS CS 2023 Sec A</option>
+                    ) : (
+                      classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.section})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+
               <button
                 type="submit"
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md transition"
+                disabled={isSubmitting}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md transition disabled:opacity-50"
               >
-                Create Student Record
+                {isSubmitting ? 'Registering Student...' : 'Create Student Record'}
               </button>
             </form>
           </div>
@@ -344,7 +493,6 @@ export const StudentsView: React.FC = () => {
             )}
 
             <form onSubmit={handleEnrollSubmit} className="space-y-4">
-              {/* Image Preview Box */}
               <div className="border-2 border-dashed border-slate-700 rounded-2xl p-4 text-center hover:border-slate-600 transition bg-slate-900/40">
                 {previewUrl ? (
                   <div className="relative inline-block">

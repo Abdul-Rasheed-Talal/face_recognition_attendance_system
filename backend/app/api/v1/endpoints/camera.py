@@ -67,3 +67,4 @@ async def live_camera_mjpeg_stream(request: Request):
         generate_mjpeg_stream(engine),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+

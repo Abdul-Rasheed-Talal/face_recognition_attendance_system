@@ -1,5 +1,6 @@
 """
 Student Management Endpoints.
+Supports student directory listing, department & class lookups, and student registration.
 """
 
 from typing import List, Optional
@@ -12,30 +13,63 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import get_db
 from backend.app.models.entities import Student, Department, ClassGroup, FaceTemplate, AuditLog, User
-from backend.app.schemas.domain import StudentCreate, StudentUpdate, StudentOut
-from backend.app.api.v1.deps import require_teacher_or_admin, require_admin
+from backend.app.schemas.domain import (
+    StudentCreate,
+    StudentUpdate,
+    StudentOut,
+    DepartmentOut,
+    ClassOut,
+)
+from backend.app.api.v1.deps import (
+    require_teacher_or_admin,
+    require_admin,
+    get_current_user_optional,
+)
 
 router = APIRouter(prefix="/students", tags=["Students"])
+
+
+@router.get("/departments", response_model=List[DepartmentOut])
+async def list_departments(db: AsyncSession = Depends(get_db)):
+    """Lists all academic departments."""
+    res = await db.execute(select(Department).order_by(Department.name))
+    return res.scalars().all()
+
+
+@router.get("/classes", response_model=List[ClassOut])
+async def list_classes(
+    department_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lists class sections, optionally filtered by department."""
+    query = select(ClassGroup).order_by(ClassGroup.name)
+    if department_id:
+        query = query.where(ClassGroup.department_id == department_id)
+    res = await db.execute(query)
+    return res.scalars().all()
 
 
 @router.get("", response_model=List[StudentOut])
 async def list_students(
     department_id: Optional[str] = Query(None),
     class_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_teacher_or_admin),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    """Lists students with optional department, class, and name filtering."""
+    """
+    Lists students with optional department, class, and name filtering.
+    Allows authenticated teachers/admins for full roster or student portal search.
+    """
     query = select(Student).options(selectinload(Student.face_templates))
 
     if department_id:
         query = query.where(Student.department_id == department_id)
     if class_id:
         query = query.where(Student.class_id == class_id)
-    if status:
-        query = query.where(Student.status == status)
+    if status_filter:
+        query = query.where(Student.status == status_filter)
     if search:
         search_filter = f"%{search}%"
         query = query.where(
@@ -68,10 +102,14 @@ async def list_students(
 async def create_student(
     student_in: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_teacher_or_admin),
 ):
-    """Enrolls a new student profile."""
-    # Check roll number uniqueness
+    """
+    Enrolls a new student profile.
+    Accessible to authorized Teachers and Administrators.
+    Automatically resolves department and class foreign keys.
+    """
+    # Check roll number or email uniqueness
     existing_res = await db.execute(
         select(Student).where(
             (Student.roll_number == student_in.roll_number) | (Student.email == student_in.email)
@@ -80,18 +118,67 @@ async def create_student(
     if existing_res.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student with this Roll Number or Email already exists.",
+            detail=f"Student with Roll Number '{student_in.roll_number}' or Email '{student_in.email}' already exists.",
         )
 
+    # Resolve department foreign key
+    dept_res = await db.execute(
+        select(Department).where(
+            (Department.id == student_in.department_id) | (Department.code == student_in.department_id)
+        )
+    )
+    dept_obj = dept_res.scalars().first()
+    if dept_obj:
+        target_dept_id = dept_obj.id
+    else:
+        # Fallback to default department if available
+        first_dept = (await db.execute(select(Department))).scalars().first()
+        if not first_dept:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No academic departments found. Please configure a department first.",
+            )
+        target_dept_id = first_dept.id
+
+    # Resolve class foreign key
+    class_res = await db.execute(
+        select(ClassGroup).where(
+            (ClassGroup.id == student_in.class_id) | (ClassGroup.name == student_in.class_id)
+        )
+    )
+    class_obj = class_res.scalars().first()
+    if class_obj:
+        target_class_id = class_obj.id
+    else:
+        # Fallback to default class if available
+        first_class = (await db.execute(select(ClassGroup))).scalars().first()
+        if not first_class:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No classes found. Please configure a class section first.",
+            )
+        target_class_id = first_class.id
+
     student = Student(
-        roll_number=student_in.roll_number,
-        full_name=student_in.full_name,
-        email=student_in.email,
-        department_id=student_in.department_id,
-        class_id=student_in.class_id,
+        roll_number=student_in.roll_number.strip(),
+        full_name=student_in.full_name.strip(),
+        email=student_in.email.strip(),
+        department_id=target_dept_id,
+        class_id=target_class_id,
         status="ACTIVE",
     )
     db.add(student)
+
+    # Log audit entry
+    audit = AuditLog(
+        user_id=user.id,
+        action="REGISTER_STUDENT",
+        entity_type="students",
+        entity_id=student.id,
+        details_json=f'{{"roll_number": "{student.roll_number}", "full_name": "{student.full_name}"}}',
+    )
+    db.add(audit)
+
     await db.commit()
     await db.refresh(student)
 
@@ -143,9 +230,9 @@ async def update_student(
     student_id: str,
     update_data: StudentUpdate,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_teacher_or_admin),
 ):
-    """Updates student information."""
+    """Updates student information (accessible to Teachers and Admins)."""
     res = await db.execute(
         select(Student)
         .options(selectinload(Student.face_templates))
@@ -156,15 +243,25 @@ async def update_student(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
 
     if update_data.full_name is not None:
-        s.full_name = update_data.full_name
+        s.full_name = update_data.full_name.strip()
     if update_data.email is not None:
-        s.email = update_data.email
+        s.email = update_data.email.strip()
     if update_data.department_id is not None:
         s.department_id = update_data.department_id
     if update_data.class_id is not None:
         s.class_id = update_data.class_id
     if update_data.status is not None:
         s.status = update_data.status
+
+    # Audit log
+    audit = AuditLog(
+        user_id=user.id,
+        action="UPDATE_STUDENT",
+        entity_type="students",
+        entity_id=s.id,
+        details_json=f'{{"roll_number": "{s.roll_number}"}}',
+    )
+    db.add(audit)
 
     await db.commit()
     await db.refresh(s)
@@ -187,7 +284,7 @@ async def update_student(
 async def delete_student(
     student_id: str,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_teacher_or_admin),
 ):
     """Soft deletes or deactivates student record."""
     res = await db.execute(select(Student).where(Student.id == student_id))
@@ -196,5 +293,14 @@ async def delete_student(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
 
     s.status = "INACTIVE"
+    audit = AuditLog(
+        user_id=user.id,
+        action="DEACTIVATE_STUDENT",
+        entity_type="students",
+        entity_id=s.id,
+        details_json=f'{{"roll_number": "{s.roll_number}"}}',
+    )
+    db.add(audit)
+
     await db.commit()
     return None

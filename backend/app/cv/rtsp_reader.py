@@ -188,3 +188,4 @@ class VideoStreamReader:
 
         with self._lock:
             self._is_connected = False
+

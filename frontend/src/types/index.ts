@@ -104,3 +104,4 @@ export interface CorrectionRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   created_at: string;
 }
+

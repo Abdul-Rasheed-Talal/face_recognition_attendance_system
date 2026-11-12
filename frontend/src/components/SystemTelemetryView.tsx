@@ -148,3 +148,4 @@ export const SystemTelemetryView: React.FC<SystemTelemetryViewProps> = ({ camera
     </div>
   );
 };
+

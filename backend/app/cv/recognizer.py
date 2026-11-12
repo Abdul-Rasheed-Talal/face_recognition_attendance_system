@@ -70,3 +70,4 @@ class SFaceFeatureExtractor:
         Values range from -1.0 to 1.0 (typical match threshold ~0.363).
         """
         return float(np.dot(embedding_a, embedding_b))
+

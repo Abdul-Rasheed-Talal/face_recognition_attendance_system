@@ -232,3 +232,4 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
     </div>
   );
 };
+

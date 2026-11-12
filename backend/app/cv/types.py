@@ -106,3 +106,4 @@ class CameraHealthStatus:
     dropped_frames_count: int
     last_frame_timestamp: float
     last_error_message: Optional[str] = None
+

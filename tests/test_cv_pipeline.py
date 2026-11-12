@@ -239,3 +239,4 @@ def test_multi_frame_confirmation_engine():
     _ = engine.record_observation(track2, alice_match, current_timestamp=1010.3)
     event_cooldown = engine.record_observation(track2, alice_match, current_timestamp=1010.6)
     assert event_cooldown is None
+

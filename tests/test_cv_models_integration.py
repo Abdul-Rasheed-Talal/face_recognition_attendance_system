@@ -77,3 +77,4 @@ def test_sface_similarity_scoring():
 
     sim_diff = recognizer.compute_similarity(feat_a1, feat_b)
     assert sim_diff < 0.90
+

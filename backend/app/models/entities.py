@@ -221,3 +221,4 @@ class AuditLog(Base):
     details_json = Column(Text, nullable=True)
     ip_address = Column(String(50), nullable=True)
     timestamp = Column(DateTime(timezone=True), default=get_utc_now)
+

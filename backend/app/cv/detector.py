@@ -135,3 +135,4 @@ class YuNetFaceDetector:
             results.append(detected)
 
         return results
+

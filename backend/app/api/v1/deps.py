@@ -70,3 +70,4 @@ async def require_teacher_or_admin(user: User = Depends(get_current_user)) -> Us
             detail="Teacher or Administrative privileges required.",
         )
     return user
+

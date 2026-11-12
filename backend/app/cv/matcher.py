@@ -156,3 +156,4 @@ class FaceMatcher:
             is_ambiguous=False,
             status_label="CONFIRMED"
         )
+

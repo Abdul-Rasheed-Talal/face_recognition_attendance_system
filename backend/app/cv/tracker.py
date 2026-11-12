@@ -167,3 +167,4 @@ class FaceTracker:
         track.last_seen_timestamp = timestamp
         track.frames_tracked += 1
         track.frames_missed = 0
+

@@ -10,6 +10,21 @@ import {
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
+export interface DepartmentItem {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ClassItem {
+  id: string;
+  department_id: string;
+  name: string;
+  year: string;
+  semester: string;
+  section: string;
+}
+
 class ApiService {
   private token: string | null = null;
 
@@ -46,6 +61,17 @@ class ApiService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+      
+      // Auto-handle 401 Unauthorized (expired/missing token)
+      if (response.status === 401) {
+        this.setToken(null);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('fras_auth_required', {
+            detail: { message: errorData.detail || 'Authentication required' }
+          }));
+        }
+      }
+
       throw new Error(errorData.detail || `HTTP Error ${response.status}`);
     }
 
@@ -74,7 +100,16 @@ class ApiService {
     this.setToken(null);
   }
 
-  // --- Students ---
+  // --- Students & Academics ---
+  async listDepartments(): Promise<DepartmentItem[]> {
+    return this.request<DepartmentItem[]>('/students/departments');
+  }
+
+  async listClasses(departmentId?: string): Promise<ClassItem[]> {
+    const qs = departmentId ? `?department_id=${departmentId}` : '';
+    return this.request<ClassItem[]>(`/students/classes${qs}`);
+  }
+
   async listStudents(params?: { search?: string; status?: string }): Promise<Student[]> {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);

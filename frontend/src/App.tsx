@@ -48,7 +48,18 @@ export function App() {
   useEffect(() => {
     loadInitialData();
     const interval = setInterval(loadInitialData, 5000); // 5s polling for dashboard stats
-    return () => clearInterval(interval);
+
+    // Listen for auth-required events dispatched by api service on 401
+    const handleAuthRequired = () => {
+      setCurrentUser(null);
+      setIsLoginModalOpen(true);
+    };
+    window.addEventListener('fras_auth_required', handleAuthRequired);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('fras_auth_required', handleAuthRequired);
+    };
   }, [loadInitialData]);
 
   // WebSocket event handler for real-time live events
@@ -96,7 +107,12 @@ export function App() {
 
           {currentTab === 'attendance' && <AttendanceView />}
 
-          {currentTab === 'students' && <StudentsView />}
+          {currentTab === 'students' && (
+            <StudentsView
+              currentUser={currentUser}
+              onOpenLogin={() => setIsLoginModalOpen(true)}
+            />
+          )}
 
           {currentTab === 'portal' && <StudentPortalView />}
 

@@ -118,3 +118,4 @@ async def delete_face_templates(
     db.add(audit)
     await db.commit()
     return None
+

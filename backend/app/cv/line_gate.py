@@ -109,3 +109,4 @@ class DirectionalLineGate:
             logger.info(f"Track #{track.track_id} validated ENTRY into laboratory (dot={dot:.2f})")
 
         return track.has_crossed_entry_line, direction
+

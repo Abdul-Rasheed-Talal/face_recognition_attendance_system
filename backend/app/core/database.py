@@ -51,3 +51,4 @@ async def init_db() -> None:
     """Creates database schema tables if not present."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+

@@ -23,3 +23,4 @@ api_router.include_router(sessions.router)
 api_router.include_router(attendance.router)
 api_router.include_router(camera.router)
 api_router.include_router(reports.router)
+

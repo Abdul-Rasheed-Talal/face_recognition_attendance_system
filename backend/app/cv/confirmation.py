@@ -143,3 +143,4 @@ class MultiFrameConfirmationEngine:
         """Manually reset cooldown for a student."""
         if student_id in self._identity_cooldowns:
             del self._identity_cooldowns[student_id]
+

@@ -145,3 +145,4 @@ class FaceEnrollmentService:
 
         logger.info(f"Loaded {loaded_count} student face templates into in-memory gallery.")
         return loaded_count
+

@@ -259,3 +259,4 @@ class VisionRecognitionEngine:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 0, 0), 1, cv2.LINE_AA)
 
         return canvas
+

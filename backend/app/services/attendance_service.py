@@ -201,3 +201,4 @@ class AttendanceService:
         await db.refresh(record)
 
         return record
+
