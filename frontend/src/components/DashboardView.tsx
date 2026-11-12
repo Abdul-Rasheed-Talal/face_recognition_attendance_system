@@ -22,11 +22,17 @@ interface DashboardViewProps {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvents, onRefresh }) => {
   const [isReconnecting, setIsReconnecting] = React.useState(false);
+  const [streamError, setStreamError] = React.useState(false);
+  const [streamKey, setStreamKey] = React.useState(Date.now());
+  const [mode, setMode] = React.useState<'stream' | 'snapshot'>('stream');
+  const [snapshotSrc, setSnapshotSrc] = React.useState<string>('');
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
     try {
       await api.reconnectCamera();
+      setStreamKey(Date.now());
+      setStreamError(false);
       setTimeout(onRefresh, 1000);
     } catch (e) {
       console.error(e);
@@ -35,7 +41,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
     }
   };
 
-  const streamUrl = api.getCameraStreamUrl();
+  // In snapshot fallback or snapshot mode, poll snapshot frames every 200ms
+  React.useEffect(() => {
+    if (mode !== 'snapshot' && !streamError) return;
+
+    // Immediately fetch first snapshot
+    setSnapshotSrc(api.getCameraSnapshotUrl());
+
+    const interval = setInterval(() => {
+      setSnapshotSrc(api.getCameraSnapshotUrl());
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [mode, streamError]);
+
+  const streamUrl = `${api.getCameraStreamUrl()}?k=${streamKey}`;
+  const displaySrc = (mode === 'snapshot' || streamError) ? (snapshotSrc || api.getCameraSnapshotUrl()) : streamUrl;
   const camHealth = stats?.camera_health;
 
   return (
@@ -109,12 +130,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
         <div className="lg:col-span-2 bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-lg flex flex-col">
           <div className="p-4 border-b border-slate-700/80 flex items-center justify-between bg-slate-800/60">
             <div className="flex items-center gap-2.5">
-              <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" />
+              <div className={`w-3 h-3 rounded-full ${camHealth?.camera_connected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
               <h2 className="text-sm font-bold text-white tracking-wide">
                 Entrance Camera: Live Recognition Overlay
               </h2>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-700/80 text-slate-300 border border-slate-600/50 uppercase">
+                {mode === 'snapshot' || streamError ? 'Live Snapshots' : 'Live Stream'}
+              </span>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (mode === 'stream' && !streamError) {
+                    setMode('snapshot');
+                  } else {
+                    setMode('stream');
+                    setStreamError(false);
+                    setStreamKey(Date.now());
+                  }
+                }}
+                className="px-2.5 py-1.5 bg-slate-700/90 hover:bg-slate-600 text-xs font-medium text-slate-300 rounded-lg transition border border-slate-600/40"
+                title="Toggle stream protocol between MJPEG and Snapshot polling"
+              >
+                {mode === 'snapshot' || streamError ? 'Use MJPEG Stream' : 'Use Snapshot Mode'}
+              </button>
               <button
                 onClick={handleReconnect}
                 disabled={isReconnecting}
@@ -130,12 +169,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
           {/* Video Stream Container */}
           <div className="relative bg-slate-950 flex-1 min-h-[380px] flex items-center justify-center overflow-hidden">
             <img
-              src={streamUrl}
+              key={mode === 'stream' && !streamError ? streamKey : undefined}
+              src={displaySrc}
               alt="Live Entrance Recognition Feed"
               className="w-full h-full object-contain max-h-[500px]"
-              onError={(e) => {
-                // Show offline placeholder if stream not ready
-                (e.target as HTMLElement).style.display = 'none';
+              onError={() => {
+                console.warn('Live camera stream encountered a loading issue. Falling back to live snapshots.');
+                setStreamError(true);
+              }}
+              onLoad={() => {
+                if (streamError && mode === 'stream') {
+                  setStreamError(false);
+                }
               }}
             />
             {/* Fallback if camera stream is disconnected or pending */}

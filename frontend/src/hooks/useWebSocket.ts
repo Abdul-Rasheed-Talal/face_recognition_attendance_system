@@ -9,7 +9,11 @@ export function useWebSocket(onEvent?: (event: LiveAttendanceEvent) => void) {
 
   const connect = useCallback(() => {
     try {
-      const wsUrl = 'ws://localhost:8000/ws/attendance';
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.port === '8000'
+        ? window.location.host
+        : `${window.location.hostname}:8000`;
+      const wsUrl = `${proto}//${host}/ws/attendance`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

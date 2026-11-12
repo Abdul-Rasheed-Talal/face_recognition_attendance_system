@@ -8,7 +8,17 @@ import {
   CorrectionRequest,
 } from '../types';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const getApiBase = (): string => {
+  if (typeof window === 'undefined') return 'http://localhost:8000/api/v1';
+  // If served directly from the backend (port 8000), use clean relative paths
+  if (window.location.port === '8000') {
+    return '/api/v1';
+  }
+  // If running in development (e.g. Vite 5173), match current hostname on port 8000
+  return `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+};
+
+const API_BASE = getApiBase();
 
 export interface DepartmentItem {
   id: string;
@@ -194,6 +204,10 @@ class ApiService {
   // --- Camera ---
   getCameraStreamUrl(): string {
     return `${API_BASE}/camera/stream`;
+  }
+
+  getCameraSnapshotUrl(): string {
+    return `${API_BASE}/camera/snapshot?t=${Date.now()}`;
   }
 
   async getCameraStatus() {

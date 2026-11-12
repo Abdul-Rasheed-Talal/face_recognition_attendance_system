@@ -68,6 +68,7 @@ class VisionRecognitionEngine:
 
         # Telemetry & annotated visual feed for live monitoring
         self._latest_annotated_frame: Optional[np.ndarray] = None
+        self._latest_jpeg_bytes: Optional[bytes] = None
         self._current_tracked_faces: List[TrackedFace] = []
         self._latest_matches: Dict[int, RecognitionMatch] = {}
         self._pipeline_latency_ms: float = 0.0
@@ -93,11 +94,18 @@ class VisionRecognitionEngine:
     def get_annotated_frame_jpeg(self) -> Optional[bytes]:
         """Returns the most recent annotated frame encoded as JPEG for web streaming."""
         with self._lock:
-            if self._latest_annotated_frame is None:
-                return None
-            ret, buf = cv2.imencode(".jpg", self._latest_annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if not ret:
-                return None
+            if self._latest_jpeg_bytes is not None:
+                return self._latest_jpeg_bytes
+            if self._latest_annotated_frame is not None:
+                ret, buf = cv2.imencode(".jpg", self._latest_annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ret:
+                    self._latest_jpeg_bytes = buf.tobytes()
+                    return self._latest_jpeg_bytes
+            # Initial placeholder frame so HTTP streams never stall with 0 bytes
+            blank = np.zeros((360, 640, 3), dtype=np.uint8)
+            cv2.putText(blank, "CONNECTING TO CAMERA FEED...", (120, 180),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 255), 2, cv2.LINE_AA)
+            _, buf = cv2.imencode(".jpg", blank, [cv2.IMWRITE_JPEG_QUALITY, 70])
             return buf.tobytes()
 
     def get_health_status(self) -> Dict[str, Any]:
@@ -206,12 +214,16 @@ class VisionRecognitionEngine:
             annotated = self._render_annotations(
                 scaled_frame, tracked_faces, current_frame_matches, proc_w, proc_h
             )
+            ret, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            jpeg_bytes = buf.tobytes() if ret else None
 
             t1 = time.perf_counter()
             latency = (t1 - t0) * 1000.0
 
             with self._lock:
                 self._latest_annotated_frame = annotated
+                if jpeg_bytes is not None:
+                    self._latest_jpeg_bytes = jpeg_bytes
                 self._current_tracked_faces = tracked_faces
                 self._latest_matches = current_frame_matches
                 self._pipeline_latency_ms = latency
