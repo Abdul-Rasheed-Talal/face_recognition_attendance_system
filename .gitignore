@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv/
+env/
+venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Local database
+data/*.db
+data/*.sqlite3
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+.npm
+npm-debug.log*
+
+# Large model binaries (downloaded via script)
+models/*.onnx
+
+# OS generated files
+.DS_Store
+Thumbs.db

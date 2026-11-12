@@ -1,0 +1,78 @@
+"""
+Application Configuration Settings.
+Loads environment variables using Pydantic Settings.
+"""
+
+from typing import List, Union
+from pydantic import AnyHttpUrl, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
+
+    # Application
+    APP_NAME: str = "College Lab Face Recognition Attendance System"
+    APP_ENV: str = "development"
+    DEBUG: bool = True
+    SECRET_KEY: str = "institution-production-secret-key-replace-in-env-32-chars-min"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 12  # 12 hours
+
+    # Server
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+    ]
+
+    # Institutional Timezone
+    TIMEZONE: str = "Asia/Karachi"
+
+    # Database
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/attendance.db"
+    DB_ECHO: bool = False
+
+    # Models & CV
+    YUNET_MODEL_PATH: str = "./models/face_detection_yunet_2023mar.onnx"
+    SFACE_MODEL_PATH: str = "./models/face_recognition_sface_2021dec.onnx"
+    CV_DETECTION_CONFIDENCE_THRESHOLD: float = 0.85
+    CV_NMS_THRESHOLD: float = 0.30
+    CV_MIN_FACE_WIDTH: int = 60
+    CV_LAPLACIAN_BLUR_THRESHOLD: float = 60.0
+    CV_COSINE_SIMILARITY_THRESHOLD: float = 0.363
+    CV_AMBIGUITY_MARGIN: float = 0.080
+    CV_MULTI_FRAME_CONFIRMATION_COUNT: int = 3
+    CV_MULTI_FRAME_WINDOW_SIZE: int = 5
+    CV_TRACK_COOLDOWN_SECONDS: float = 1800.0
+
+    # Camera & Doorway Gate
+    CAMERA_SOURCE: Union[str, int] = "0"
+    CAMERA_SOURCE_TYPE: str = "webcam"  # webcam, rtsp, or file
+    CAMERA_RTSP_TRANSPORT: str = "tcp"
+    CAMERA_FPS: int = 25
+    CV_PROCESSING_FPS: float = 3.33
+    CAMERA_WIDTH: int = 1280
+    CAMERA_HEIGHT: int = 720
+    CAMERA_RECONNECT_INTERVAL_SECONDS: float = 3.0
+
+    ENTRY_LINE_START_X: float = 0.10
+    ENTRY_LINE_START_Y: float = 0.55
+    ENTRY_LINE_END_X: float = 0.90
+    ENTRY_LINE_END_Y: float = 0.55
+    ENTRY_DIRECTION_NORMAL_X: float = 0.0
+    ENTRY_DIRECTION_NORMAL_Y: float = 1.0
+
+    # Business Rules
+    DEFAULT_LATE_GRACE_MINUTES: int = 15
+    AUTO_CLOSE_SESSION_HOURS: int = 4
+
+
+settings = Settings()

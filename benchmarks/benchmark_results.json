@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-11-12T05:01:37Z",
+  "hardware_specs": {
+    "os": "win32",
+    "python_version": "3.14.3",
+    "opencv_version": "4.13.0",
+    "cpu_count_physical": 4,
+    "cpu_count_logical": 4,
+    "total_ram_gb": 7.92,
+    "available_ram_gb": 2.63
+  },
+  "memory_profile": {
+    "initial_mb": 38.6,
+    "final_mb": 130.61,
+    "models_delta_mb": 92.01
+  },
+  "yunet_detection_benchmark": {
+    "QVGA (320x240)": {
+      "resolution": "320x240",
+      "mean_ms": 4.68,
+      "median_p50_ms": 4.42,
+      "p95_ms": 5.68,
+      "p99_ms": 5.96,
+      "min_ms": 3.88,
+      "max_ms": 8.02,
+      "throughput_fps": 213.7
+    },
+    "QHD (640x360 - Recommended)": {
+      "resolution": "640x360",
+      "mean_ms": 12.73,
+      "median_p50_ms": 12.26,
+      "p95_ms": 16.21,
+      "p99_ms": 18.27,
+      "min_ms": 10.42,
+      "max_ms": 21.33,
+      "throughput_fps": 78.6
+    },
+    "HD (1280x720)": {
+      "resolution": "1280x720",
+      "mean_ms": 61.87,
+      "median_p50_ms": 59.87,
+      "p95_ms": 74.28,
+      "p99_ms": 121.92,
+      "min_ms": 52.71,
+      "max_ms": 124.46,
+      "throughput_fps": 16.2
+    }
+  },
+  "sface_recognition_benchmark": {
+    "embedding_dimensions": 128,
+    "mean_ms": 19.87,
+    "median_p50_ms": 19.58,
+    "p95_ms": 23.43,
+    "p99_ms": 28.85,
+    "min_ms": 15.83,
+    "max_ms": 33.2,
+    "throughput_fps": 50.3
+  },
+  "vector_matching_benchmark": {
+    "50_students": {
+      "gallery_size": 50,
+      "mean_microsec": 4.94,
+      "p95_microsec": 4.81,
+      "p99_microsec": 17.1,
+      "searches_per_sec": 202486
+    },
+    "100_students": {
+      "gallery_size": 100,
+      "mean_microsec": 4.63,
+      "p95_microsec": 4.7,
+      "p99_microsec": 4.9,
+      "searches_per_sec": 215796
+    },
+    "250_students": {
+      "gallery_size": 250,
+      "mean_microsec": 6.64,
+      "p95_microsec": 6.7,
+      "p99_microsec": 19.4,
+      "searches_per_sec": 150543
+    },
+    "500_students": {
+      "gallery_size": 500,
+      "mean_microsec": 11.83,
+      "p95_microsec": 13.4,
+      "p99_microsec": 24.34,
+      "searches_per_sec": 84529
+    },
+    "1000_students": {
+      "gallery_size": 1000,
+      "mean_microsec": 18.19,
+      "p95_microsec": 22.94,
+      "p99_microsec": 43.41,
+      "searches_per_sec": 54980
+    }
+  },
+  "discrimination_validation": {
+    "same_identity_cosine": 0.8989,
+    "different_identity_cosine": 0.8376,
+    "discrimination_margin": 0.0613,
+    "validation_passed": true
+  },
+  "end_to_end_projection": {
+    "single_face_latency_ms": 32.61,
+    "two_face_latency_ms": 52.49,
+    "target_fps": 3.0,
+    "budget_ms": 333.3,
+    "core_duty_cycle_single_face_pct": 9.8,
+    "core_duty_cycle_two_face_pct": 15.7
+  }
+}
