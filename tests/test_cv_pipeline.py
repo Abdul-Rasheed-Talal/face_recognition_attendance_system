@@ -240,3 +240,32 @@ def test_multi_frame_confirmation_engine():
     event_cooldown = engine.record_observation(track2, alice_match, current_timestamp=1010.6)
     assert event_cooldown is None
 
+
+def test_select_primary_enrollment_face_filtering():
+    from backend.app.services.enrollment_service import select_primary_enrollment_face
+
+    dummy_lm = create_dummy_landmarks()
+    raw = np.zeros(15, dtype=np.float32)
+
+    # 1. Dominant portrait face + tiny background detection
+    face_main = DetectedFace(bbox=(100, 100, 300, 300), confidence=0.96, landmarks=dummy_lm, raw_yunet_output=raw, blur_score=5.0)
+    face_tiny = DetectedFace(bbox=(500, 20, 28, 28), confidence=0.51, landmarks=dummy_lm, raw_yunet_output=raw, blur_score=2.0)
+
+    chosen, err = select_primary_enrollment_face([face_main, face_tiny])
+    assert err is None
+    assert chosen is not None
+    assert chosen.bbox == (100, 100, 300, 300)
+
+    # 2. Overlapping proposals (same face duplicate boxes)
+    face_dup = DetectedFace(bbox=(105, 102, 295, 298), confidence=0.88, landmarks=dummy_lm, raw_yunet_output=raw, blur_score=5.0)
+    chosen_dup, err_dup = select_primary_enrollment_face([face_main, face_dup])
+    assert err_dup is None
+    assert chosen_dup is not None
+    assert chosen_dup.confidence == 0.96
+
+    # 3. Two actual distinct people of comparable size (group photo)
+    face_person2 = DetectedFace(bbox=(450, 100, 260, 260), confidence=0.92, landmarks=dummy_lm, raw_yunet_output=raw, blur_score=4.5)
+    chosen_group, err_group = select_primary_enrollment_face([face_main, face_person2])
+    assert chosen_group is None
+    assert "Multiple distinct faces" in err_group
+

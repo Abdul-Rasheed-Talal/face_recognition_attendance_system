@@ -12,11 +12,95 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.entities import Student, FaceTemplate, AuditLog
+from backend.app.cv.types import DetectedFace
 from backend.app.cv.detector import YuNetFaceDetector
 from backend.app.cv.recognizer import SFaceFeatureExtractor
 from backend.app.cv.matcher import FaceMatcher
 
 logger = logging.getLogger(__name__)
+
+
+def select_primary_enrollment_face(
+    detections: List[DetectedFace],
+    min_confidence: float = 0.50,
+    min_size_px: int = 25,
+) -> Tuple[Optional[DetectedFace], Optional[str]]:
+    """
+    Intelligently identifies and isolates the primary student face from candidate detections:
+    1. Filters out small artifacts (< min_size_px) and low-confidence detections (< min_confidence).
+    2. Merges overlapping bounding box proposals for the same face (IoU > 0.30).
+    3. If there is a dominant portrait subject face (occupies >= 3x the area of any minor background artifact),
+       automatically selects the dominant face.
+    4. Only rejects if multiple genuine, competing, prominent faces exist (e.g. group photos).
+    """
+    if not detections:
+        return None, "No face detected in enrollment image. Please ensure good lighting and front-facing pose."
+
+    # 1. Filter out tiny artifacts and low-confidence false positives
+    valid_candidates: List[DetectedFace] = [
+        d for d in detections
+        if d.bbox[2] >= min_size_px and d.bbox[3] >= min_size_px and d.confidence >= min_confidence
+    ]
+
+    if not valid_candidates:
+        highest_conf = max(detections, key=lambda d: d.confidence)
+        if highest_conf.confidence < 0.40:
+            return None, f"Detected face confidence too low ({highest_conf.confidence:.2f}). Please face the camera directly."
+        valid_candidates = [highest_conf]
+
+    # 2. Deduplicate overlapping bounding boxes (NMS)
+    valid_candidates.sort(key=lambda d: d.confidence, reverse=True)
+    deduplicated: List[DetectedFace] = []
+
+    for cand in valid_candidates:
+        is_duplicate = False
+        for kept in deduplicated:
+            xa1, ya1, wa, ha = cand.bbox
+            xb1, yb1, wb, hb = kept.bbox
+            inter_x1 = max(xa1, xb1)
+            inter_y1 = max(ya1, yb1)
+            inter_x2 = min(xa1 + wa, xb1 + wb)
+            inter_y2 = min(ya1 + ha, yb1 + hb)
+            inter_w = max(0, inter_x2 - inter_x1)
+            inter_h = max(0, inter_y2 - inter_y1)
+            inter_area = inter_w * inter_h
+            union_area = float(wa * ha + wb * hb - inter_area)
+            iou = inter_area / union_area if union_area > 0 else 0.0
+
+            if iou > 0.30:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            deduplicated.append(cand)
+
+    # 3. If exactly 1 distinct face remains, return it
+    if len(deduplicated) == 1:
+        return deduplicated[0], None
+
+    # 4. Check for dominant portrait subject face (area = w * h)
+    deduplicated.sort(key=lambda d: d.bbox[2] * d.bbox[3], reverse=True)
+    primary = deduplicated[0]
+    primary_area = primary.bbox[2] * primary.bbox[3]
+
+    competing_faces = []
+    for other in deduplicated[1:]:
+        other_area = other.bbox[2] * other.bbox[3]
+        # A face is considered a competing subject if it occupies at least 25% of the primary face area
+        # and has confidence >= 0.60
+        if other_area >= 0.25 * primary_area and other.confidence >= 0.60:
+            competing_faces.append(other)
+
+    if competing_faces:
+        return None, (
+            f"Multiple distinct faces ({len(competing_faces) + 1}) detected in image. "
+            f"Please upload a portrait containing only the student."
+        )
+
+    logger.info(
+        f"Selected dominant portrait face {primary.bbox} (conf: {primary.confidence:.2f}, "
+        f"area: {primary_area}px) suppressing {len(deduplicated) - 1} background detections."
+    )
+    return primary, None
 
 
 class FaceEnrollmentService:
@@ -63,28 +147,21 @@ class FaceEnrollmentService:
 
         # Detect faces
         try:
-            detections = self.detector.detect(frame)
+            raw_detections = self.detector.detect(frame)
         except Exception as det_err:
             logger.error(f"Detection error during enrollment: {det_err}", exc_info=True)
             return False, f"Face detection error: {str(det_err)}", None
 
-        if len(detections) == 0:
-            return False, "No face detected in enrollment image. Please ensure good lighting and front-facing pose.", None
+        logger.info(
+            f"Enrollment detections for {student.full_name}: "
+            f"{[(d.bbox, round(d.confidence, 2)) for d in raw_detections]}"
+        )
 
-        if len(detections) > 1:
-            return False, f"Multiple faces ({len(detections)}) detected. Enrollment image must contain only the student.", None
+        detected, err_msg = select_primary_enrollment_face(raw_detections)
+        if detected is None:
+            return False, err_msg or "Failed to detect a valid face in enrollment photo.", None
 
-        detected = detections[0]
-
-        # Lenient criteria tailored for high-quality static portrait photos
-        bx, by, bw, bh = detected.bbox
-        if bw < 30 or bh < 30:
-            return False, f"Face too small ({bw}x{bh}px). Please provide a closer portrait.", None
-
-        if detected.confidence < 0.55:
-            return False, f"Face pose confidence too low ({detected.confidence:.2f}). Please face the camera directly.", None
-
-        # Only reject completely blank or destroyed images (laplacian < 0.4)
+        # Reject only completely blank or unreadable images
         if detected.blur_score < 0.4:
             return False, f"Image is extremely blurred or unreadable (score: {detected.blur_score:.2f}). Please upload a sharper photo.", None
 
