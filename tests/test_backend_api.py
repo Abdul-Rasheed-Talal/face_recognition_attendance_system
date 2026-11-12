@@ -119,3 +119,26 @@ async def test_student_crud_and_attendance():
         assert "overall_attendance_pct" in stats
         assert "camera_health" in stats
 
+        # 6. Test student creation and permanent deletion
+        new_stu_resp = await client.post(
+            "/api/v1/students",
+            headers=headers,
+            json={
+                "roll_number": "TEST-DEL-01",
+                "full_name": "Temporary Test Student",
+                "email": "temp.test@college.edu",
+                "department_id": "CS",
+                "class_id": "BS CS 2023",
+            }
+        )
+        assert new_stu_resp.status_code == 201
+        temp_id = new_stu_resp.json()["id"]
+
+        del_resp = await client.delete(f"/api/v1/students/{temp_id}", headers=headers)
+        assert del_resp.status_code == 200
+        assert del_resp.json()["success"] is True
+
+        # Verify student is gone
+        get_gone = await client.get(f"/api/v1/students/{temp_id}", headers=headers)
+        assert get_gone.status_code == 404
+

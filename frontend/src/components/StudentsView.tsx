@@ -196,12 +196,30 @@ export const StudentsView: React.FC<StudentsViewProps> = ({ currentUser, onOpenL
       onOpenLogin();
       return;
     }
-    if (!confirm(`Remove biometric template for ${student.full_name}?`)) return;
+    if (!confirm(`Remove biometric face template for ${student.full_name}?`)) return;
     try {
       await api.deleteFaceTemplates(student.id);
       fetchStudents();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDeleteStudent = async (student: Student) => {
+    if (!currentUser) {
+      onOpenLogin();
+      return;
+    }
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete student:\n\n• ${student.full_name} (${student.roll_number})\n• Email: ${student.email}\n\nThis will remove their profile, biometric face template, and attendance records permanently.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.deleteStudent(student.id);
+      fetchStudents();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete student.');
     }
   };
 
@@ -314,15 +332,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({ currentUser, onOpenL
                           <Camera className="w-3.5 h-3.5" />
                           <span>{student.is_face_enrolled ? 'Re-Enroll Face' : 'Enroll Face'}</span>
                         </button>
-                        {student.is_face_enrolled && (
-                          <button
-                            onClick={() => handleDeleteTemplate(student)}
-                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 rounded-lg transition"
-                            title="Remove Biometric Template"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleDeleteStudent(student)}
+                          className="flex items-center gap-1 px-2.5 py-1 text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 rounded-lg text-xs font-medium transition"
+                          title="Permanently Delete Student Record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </td>
                   </tr>

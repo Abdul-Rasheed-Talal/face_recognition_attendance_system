@@ -6,13 +6,22 @@ Supports student directory listing, department & class lookups, and student regi
 from typing import List, Optional
 import io
 import csv
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query
-from sqlalchemy import select, and_
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Request
+from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import get_db
-from backend.app.models.entities import Student, Department, ClassGroup, FaceTemplate, AuditLog, User
+from backend.app.models.entities import (
+    Student,
+    Department,
+    ClassGroup,
+    FaceTemplate,
+    AttendanceRecord,
+    AttendanceCorrectionRequest,
+    AuditLog,
+    User,
+)
 from backend.app.schemas.domain import (
     StudentCreate,
     StudentUpdate,
@@ -280,27 +289,46 @@ async def update_student(
     )
 
 
-@router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{student_id}")
 async def delete_student(
     student_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
-    """Soft deletes or deactivates student record."""
+    """
+    Permanently deletes a student record.
+    Removes biometric templates from database and in-memory matcher gallery,
+    cleans up associated attendance records, and logs the action in audit trail.
+    """
     res = await db.execute(select(Student).where(Student.id == student_id))
     s = res.scalars().first()
     if not s:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
 
-    s.status = "INACTIVE"
+    student_name = s.full_name
+    student_roll = s.roll_number
+
+    # 1. Remove from in-memory FaceMatcher gallery immediately
+    matcher = getattr(request.app.state, "matcher", None)
+    if matcher:
+        matcher.remove_student(student_id)
+
+    # 2. Delete related records in database
+    await db.execute(delete(FaceTemplate).where(FaceTemplate.student_id == student_id))
+    await db.execute(delete(AttendanceRecord).where(AttendanceRecord.student_id == student_id))
+    await db.execute(delete(AttendanceCorrectionRequest).where(AttendanceCorrectionRequest.student_id == student_id))
+    await db.delete(s)
+
+    # 3. Audit trail log
     audit = AuditLog(
         user_id=user.id,
-        action="DEACTIVATE_STUDENT",
+        action="DELETE_STUDENT",
         entity_type="students",
-        entity_id=s.id,
-        details_json=f'{{"roll_number": "{s.roll_number}"}}',
+        entity_id=student_id,
+        details_json=f'{{"roll_number": "{student_roll}", "full_name": "{student_name}"}}',
     )
     db.add(audit)
 
     await db.commit()
-    return None
+    return {"success": True, "message": f"Student '{student_name}' ({student_roll}) permanently deleted."}

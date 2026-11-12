@@ -130,8 +130,8 @@ class Student(Base):
     department = relationship("Department", back_populates="students")
     class_group = relationship("ClassGroup", back_populates="students")
     face_templates = relationship("FaceTemplate", back_populates="student", cascade="all, delete-orphan")
-    attendance_records = relationship("AttendanceRecord", back_populates="student")
-    correction_requests = relationship("AttendanceCorrectionRequest", back_populates="student")
+    attendance_records = relationship("AttendanceRecord", back_populates="student", cascade="all, delete-orphan")
+    correction_requests = relationship("AttendanceCorrectionRequest", back_populates="student", cascade="all, delete-orphan")
 
 
 class FaceTemplate(Base):
