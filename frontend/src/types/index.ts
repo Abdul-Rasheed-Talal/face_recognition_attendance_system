@@ -19,12 +19,25 @@ export interface Student {
   id: string;
   roll_number: string;
   full_name: string;
-  email: string;
+  email?: string;
   department_id: string;
   class_id: string;
   status: string;
   is_face_enrolled: boolean;
   created_at: string;
+}
+
+export interface CameraDevice {
+  id: string;
+  name: string;
+  rtsp_url: string;
+  ip_address?: string;
+  port?: number;
+  status: string;
+  is_active: boolean;
+  laboratory_id?: string;
+  last_seen?: string;
+  created_at?: string;
 }
 
 export interface LabSession {

@@ -75,6 +75,60 @@ class VideoStreamReader:
         self._is_connected = False
         logger.info(f"VideoStreamReader stopped for source: {self.source}")
 
+    def update_source(self, new_source: Union[str, int]) -> None:
+        """
+        Dynamically update the camera source and trigger seamless reconnection.
+        """
+        logger.info(f"Switching video source from {self.source} to {new_source}")
+        was_running = self._thread is not None and self._thread.is_alive()
+        if was_running:
+            self.stop()
+        
+        with self._lock:
+            self.source = new_source
+            self._latest_frame = None
+            self._is_connected = False
+            self._reconnect_attempts = 0
+            self._last_error_message = None
+
+        if was_running:
+            self.start()
+
+    @classmethod
+    def probe_source(
+        cls,
+        source: Union[str, int],
+        timeout_sec: float = 4.0,
+        rtsp_transport: str = "tcp",
+    ) -> Tuple[bool, str, Optional[Tuple[int, int]]]:
+        """
+        Safely probes whether a video source (RTSP URL or webcam index) is accessible.
+        Returns: (success: bool, message: str, resolution: Optional[(width, height)])
+        """
+        if isinstance(source, str) and source.startswith("rtsp://"):
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                f"rtsp_transport;{rtsp_transport}|fflags;nobuffer|max_delay;500000|stimeout;4000000"
+            )
+            cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        else:
+            src = int(source) if isinstance(source, str) and source.isdigit() else source
+            cap = cv2.VideoCapture(src)
+
+        try:
+            t0 = time.time()
+            while time.time() - t0 < timeout_sec:
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    if ret and frame is not None:
+                        h, w = frame.shape[:2]
+                        return True, f"Successfully connected ({w}x{h})", (w, h)
+                time.sleep(0.2)
+            return False, f"Connection timed out after {timeout_sec}s or unauthorized", None
+        except Exception as e:
+            return False, f"Connection error: {str(e)}", None
+        finally:
+            cap.release()
+
     def get_latest_frame(self) -> Tuple[bool, Optional[np.ndarray], float]:
         """
         Thread-safe retrieval of the most recent video frame.
@@ -109,7 +163,7 @@ class VideoStreamReader:
         # Enforce TCP transport for RTSP streams to eliminate UDP packet tearing
         if isinstance(self.source, str) and self.source.startswith("rtsp://"):
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                f"rtsp_transport;{self.rtsp_transport}|fflags;nobuffer|max_delay;500000"
+                f"rtsp_transport;{self.rtsp_transport}|fflags;nobuffer|max_delay;500000|stimeout;5000000"
             )
             cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
         else:

@@ -6,6 +6,7 @@ import {
   AttendanceRecord,
   DashboardStatistics,
   CorrectionRequest,
+  CameraDevice,
 } from '../types';
 
 const getApiBase = (): string => {
@@ -73,9 +74,9 @@ class ApiService {
       const errorData = await response.json().catch(() => ({ detail: response.statusText }));
       
       // Auto-handle 401 Unauthorized (expired/missing token)
-      if (response.status === 401) {
+      if (response.status === 401 && this.token) {
         this.setToken(null);
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && !endpoint.includes('/auth/')) {
           window.dispatchEvent(new CustomEvent('fras_auth_required', {
             detail: { message: errorData.detail || 'Authentication required' }
           }));
@@ -131,7 +132,7 @@ class ApiService {
   async createStudent(data: {
     roll_number: string;
     full_name: string;
-    email: string;
+    email?: string;
     department_id: string;
     class_id: string;
   }): Promise<Student> {
@@ -216,6 +217,81 @@ class ApiService {
 
   async reconnectCamera() {
     return this.request('/camera/reconnect', { method: 'POST' });
+  }
+
+  async testCamera(config: {
+    source_type: string;
+    hikvision_ip?: string;
+    hikvision_port?: number;
+    hikvision_username?: string;
+    hikvision_password?: string;
+    hikvision_stream?: number;
+    rtsp_url?: string;
+    webcam_index?: number;
+  }): Promise<{ success: boolean; message: string; tested_source: string; resolution?: string }> {
+    return this.request('/camera/test', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async configureCamera(config: {
+    source_type: string;
+    hikvision_ip?: string;
+    hikvision_port?: number;
+    hikvision_username?: string;
+    hikvision_password?: string;
+    hikvision_stream?: number;
+    rtsp_url?: string;
+    webcam_index?: number;
+  }): Promise<{ success: boolean; message: string; active_source: string }> {
+    return this.request('/camera/configure', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  // --- Multi-Camera Devices Management ---
+  async listCameras(): Promise<CameraDevice[]> {
+    return this.request<CameraDevice[]>('/camera/devices');
+  }
+
+  async createCamera(data: {
+    name: string;
+    source_type: string;
+    ip_address?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+    stream_channel?: number;
+    rtsp_url?: string;
+    webcam_index?: number;
+    laboratory_id?: string;
+  }): Promise<CameraDevice> {
+    return this.request<CameraDevice>('/camera/devices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCamera(id: string, data: Partial<CameraDevice>): Promise<CameraDevice> {
+    return this.request<CameraDevice>(`/camera/devices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCamera(id: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/camera/devices/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async activateCamera(id: string): Promise<{ success: boolean; message: string; active_source: string }> {
+    return this.request<{ success: boolean; message: string; active_source: string }>(
+      `/camera/devices/${id}/activate`,
+      { method: 'POST' }
+    );
   }
 
   // --- Reports & Dashboard ---

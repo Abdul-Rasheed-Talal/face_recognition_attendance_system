@@ -112,7 +112,7 @@ async def seed_initial_fixtures():
             cam = CameraDevice(
                 laboratory_id=lab.id,
                 name="Entrance Doorway IP Camera",
-                rtsp_url=str(settings.CAMERA_SOURCE),
+                rtsp_url=str(settings.effective_camera_source),
                 status="OFFLINE",
             )
             db.add(cam)
@@ -171,9 +171,20 @@ async def lifespan(app: FastAPI):
     )
 
     # 3. Initialize video reader
-    cam_source = settings.CAMERA_SOURCE
-    if isinstance(cam_source, str) and cam_source.isdigit():
-        cam_source = int(cam_source)
+    cam_source = settings.effective_camera_source
+    async with AsyncSessionLocal() as db_session:
+        active_device = (await db_session.execute(
+            select(CameraDevice).where(CameraDevice.is_active == True)
+        )).scalars().first()
+        if active_device and active_device.rtsp_url != "0":
+            cam_source = active_device.rtsp_url
+        elif str(settings.effective_camera_source) != "0":
+            cam_source = settings.effective_camera_source
+            if active_device:
+                active_device.name = "Hikvision Entrance Camera"
+                active_device.rtsp_url = str(settings.effective_camera_source)
+                active_device.ip_address = settings.HIKVISION_IP
+                await db_session.commit()
 
     reader = VideoStreamReader(
         source=cam_source,

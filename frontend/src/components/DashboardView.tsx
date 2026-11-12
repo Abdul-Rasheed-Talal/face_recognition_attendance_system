@@ -10,9 +10,11 @@ import {
   Activity,
   CheckCircle2,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 import { DashboardStatistics, LiveAttendanceEvent } from '../types';
 import { api } from '../services/api';
+import { CameraConfigModal } from './CameraConfigModal';
 
 interface DashboardViewProps {
   stats: DashboardStatistics | null;
@@ -26,6 +28,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
   const [streamKey, setStreamKey] = React.useState(Date.now());
   const [mode, setMode] = React.useState<'stream' | 'snapshot'>('stream');
   const [snapshotSrc, setSnapshotSrc] = React.useState<string>('');
+  const [isConfigOpen, setIsConfigOpen] = React.useState(false);
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
@@ -163,6 +166,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
                 <RefreshCw className={`w-3.5 h-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
                 <span>{isReconnecting ? 'Reconnecting...' : 'Reconnect Camera'}</span>
               </button>
+              <button
+                onClick={() => setIsConfigOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white rounded-lg transition shadow-sm"
+                title="Configure Camera Source or Hikvision RTSP Credentials"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Camera Settings</span>
+              </button>
             </div>
           </div>
 
@@ -274,6 +285,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ stats, recentEvent
           </div>
         </div>
       </div>
+
+      {/* Camera Configuration & RTSP Modal */}
+      <CameraConfigModal
+        isOpen={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+        onConfigApplied={() => {
+          setStreamKey(Date.now());
+          setStreamError(false);
+          setTimeout(onRefresh, 1000);
+        }}
+        currentSource={camHealth?.camera_source}
+      />
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { Sidebar, NavTab } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { StudentsView } from './components/StudentsView';
 import { AttendanceView } from './components/AttendanceView';
+import { CamerasView } from './components/CamerasView';
 import { StudentPortalView } from './components/StudentPortalView';
 import { SystemTelemetryView } from './components/SystemTelemetryView';
 import { LoginModal } from './components/LoginModal';
@@ -19,48 +20,46 @@ export function App() {
   const [recentEvents, setRecentEvents] = useState<LiveAttendanceEvent[]>([]);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  // Load initial data
-  const loadInitialData = useCallback(async () => {
-    try {
-      // Check auth profile if token exists
-      if (api.getToken()) {
-        try {
-          const profile = await api.getProfile();
-          setCurrentUser(profile);
-        } catch {
+  // Initial Auth Check (Runs once on mount)
+  useEffect(() => {
+    if (api.getToken()) {
+      api.getProfile()
+        .then((profile) => setCurrentUser(profile))
+        .catch(() => {
           api.logout();
           setCurrentUser(null);
-        }
-      }
-
-      // Load active session
-      const sess = await api.getActiveSession();
-      setActiveSession(sess);
-
-      // Load statistics
-      const s = await api.getDashboardStatistics();
-      setStats(s);
-    } catch (err) {
-      console.debug('Failed to fetch initial telemetry:', err);
+        });
     }
-  }, []);
 
-  useEffect(() => {
-    loadInitialData();
-    const interval = setInterval(loadInitialData, 5000); // 5s polling for dashboard stats
-
-    // Listen for auth-required events dispatched by api service on 401
     const handleAuthRequired = () => {
       setCurrentUser(null);
-      setIsLoginModalOpen(true);
     };
     window.addEventListener('fras_auth_required', handleAuthRequired);
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener('fras_auth_required', handleAuthRequired);
     };
-  }, [loadInitialData]);
+  }, []);
+
+  // Periodic Telemetry Polling (Every 5 seconds)
+  const pollTelemetry = useCallback(async () => {
+    try {
+      const [sess, s] = await Promise.all([
+        api.getActiveSession().catch(() => null),
+        api.getDashboardStatistics().catch(() => null),
+      ]);
+      if (sess) setActiveSession(sess);
+      if (s) setStats(s);
+    } catch (err) {
+      console.debug('Telemetry poll error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    pollTelemetry();
+    const interval = setInterval(pollTelemetry, 5000);
+    return () => clearInterval(interval);
+  }, [pollTelemetry]);
 
   // WebSocket event handler for real-time live events
   const handleLiveEvent = useCallback((event: LiveAttendanceEvent) => {
@@ -101,7 +100,7 @@ export function App() {
             <DashboardView
               stats={stats}
               recentEvents={recentEvents}
-              onRefresh={loadInitialData}
+              onRefresh={pollTelemetry}
             />
           )}
 
@@ -111,6 +110,14 @@ export function App() {
             <StudentsView
               currentUser={currentUser}
               onOpenLogin={() => setIsLoginModalOpen(true)}
+            />
+          )}
+
+          {currentTab === 'cameras' && (
+            <CamerasView
+              currentUser={currentUser}
+              onOpenLogin={() => setIsLoginModalOpen(true)}
+              cameraHealth={stats?.camera_health}
             />
           )}
 

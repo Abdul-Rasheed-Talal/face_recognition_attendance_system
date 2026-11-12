@@ -118,16 +118,14 @@ async def create_student(
     Accessible to authorized Teachers and Administrators.
     Automatically resolves department and class foreign keys.
     """
-    # Check roll number or email uniqueness
+    # Check roll number uniqueness
     existing_res = await db.execute(
-        select(Student).where(
-            (Student.roll_number == student_in.roll_number) | (Student.email == student_in.email)
-        )
+        select(Student).where(Student.roll_number == student_in.roll_number)
     )
     if existing_res.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Student with Roll Number '{student_in.roll_number}' or Email '{student_in.email}' already exists.",
+            detail=f"Student with Roll Number '{student_in.roll_number}' already exists.",
         )
 
     # Resolve department foreign key
@@ -171,7 +169,7 @@ async def create_student(
     student = Student(
         roll_number=student_in.roll_number.strip(),
         full_name=student_in.full_name.strip(),
-        email=student_in.email.strip(),
+        email=student_in.email.strip() if student_in.email else None,
         department_id=target_dept_id,
         class_id=target_class_id,
         status="ACTIVE",
@@ -251,10 +249,16 @@ async def update_student(
     if not s:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
 
+    if update_data.roll_number is not None and update_data.roll_number.strip() != s.roll_number:
+        new_roll = update_data.roll_number.strip()
+        existing = (await db.execute(select(Student).where(Student.roll_number == new_roll))).scalars().first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Roll Number '{new_roll}' is already in use.")
+        s.roll_number = new_roll
     if update_data.full_name is not None:
         s.full_name = update_data.full_name.strip()
     if update_data.email is not None:
-        s.email = update_data.email.strip()
+        s.email = update_data.email.strip() if update_data.email.strip() else None
     if update_data.department_id is not None:
         s.department_id = update_data.department_id
     if update_data.class_id is not None:

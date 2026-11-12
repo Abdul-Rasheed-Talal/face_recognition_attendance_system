@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Camera & Doorway Gate
     CAMERA_SOURCE: Union[str, int] = "0"
-    CAMERA_SOURCE_TYPE: str = "webcam"  # webcam, rtsp, or file
+    CAMERA_SOURCE_TYPE: str = "webcam"  # webcam, rtsp, hikvision, or file
     CAMERA_RTSP_TRANSPORT: str = "tcp"
     CAMERA_FPS: int = 25
     CV_PROCESSING_FPS: float = 3.33
@@ -65,6 +65,31 @@ class Settings(BaseSettings):
     CAMERA_WIDTH: int = 1280
     CAMERA_HEIGHT: int = 720
     CAMERA_RECONNECT_INTERVAL_SECONDS: float = 3.0
+
+    # Dedicated Hikvision IP Camera Configuration
+    HIKVISION_IP: str = "192.168.1.218"
+    HIKVISION_PORT: int = 554
+    HIKVISION_USERNAME: str = "admin"
+    HIKVISION_PASSWORD: str = ""
+    HIKVISION_STREAM_CHANNEL: int = 101  # 101 = Main Stream (High Res / 1080p), 102 = Sub Stream (Faster / Lower CPU)
+
+    @property
+    def effective_camera_source(self) -> Union[str, int]:
+        """
+        Calculates the active camera source. If CAMERA_SOURCE_TYPE is 'hikvision'
+        or if HIKVISION_PASSWORD is provided and CAMERA_SOURCE is '0',
+        safely URL-encodes credentials and formats the Hikvision RTSP URL.
+        """
+        import urllib.parse
+        if self.CAMERA_SOURCE_TYPE == "hikvision" or (self.HIKVISION_PASSWORD and str(self.CAMERA_SOURCE) == "0"):
+            user_enc = urllib.parse.quote(self.HIKVISION_USERNAME, safe="")
+            pwd_enc = urllib.parse.quote(self.HIKVISION_PASSWORD, safe="")
+            return f"rtsp://{user_enc}:{pwd_enc}@{self.HIKVISION_IP}:{self.HIKVISION_PORT}/Streaming/Channels/{self.HIKVISION_STREAM_CHANNEL}"
+        
+        src = str(self.CAMERA_SOURCE)
+        if src.isdigit():
+            return int(src)
+        return src
 
     ENTRY_LINE_START_X: float = 0.10
     ENTRY_LINE_START_Y: float = 0.55

@@ -50,14 +50,15 @@ class UserOut(BaseModel):
 class StudentCreate(BaseModel):
     roll_number: str
     full_name: str
-    email: EmailStr
+    email: Optional[str] = None
     department_id: str
     class_id: str
 
 
 class StudentUpdate(BaseModel):
     full_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    roll_number: Optional[str] = None
+    email: Optional[str] = None
     department_id: Optional[str] = None
     class_id: Optional[str] = None
     status: Optional[str] = None
@@ -69,7 +70,7 @@ class StudentOut(BaseModel):
     id: str
     roll_number: str
     full_name: str
-    email: str
+    email: Optional[str] = None
     department_id: str
     class_id: str
     status: str
@@ -255,3 +256,60 @@ class CorrectionRequestOut(BaseModel):
     status: str
     created_at: datetime
     reviewed_at: Optional[datetime] = None
+
+
+class CameraConfigUpdate(BaseModel):
+    source_type: str = Field(default="hikvision", description="hikvision, rtsp, or webcam")
+    # For hikvision
+    hikvision_ip: Optional[str] = "192.168.1.218"
+    hikvision_port: Optional[int] = 554
+    hikvision_username: Optional[str] = "admin"
+    hikvision_password: Optional[str] = ""
+    hikvision_stream: Optional[int] = 101  # 101 (Main), 102 (Sub)
+    # Generic RTSP or webcam
+    rtsp_url: Optional[str] = None
+    webcam_index: Optional[int] = 0
+
+
+class CameraTestResult(BaseModel):
+    success: bool
+    message: str
+    tested_source: str
+    resolution: Optional[str] = None
+
+
+class CameraDeviceCreate(BaseModel):
+    name: str
+    source_type: str = "hikvision"  # hikvision, rtsp, webcam
+    ip_address: Optional[str] = "192.168.1.218"
+    port: int = 554
+    username: Optional[str] = "admin"
+    password: Optional[str] = ""
+    stream_channel: Optional[int] = 101
+    rtsp_url: Optional[str] = None
+    webcam_index: Optional[int] = 0
+    laboratory_id: Optional[str] = None
+
+
+class CameraDeviceUpdate(BaseModel):
+    name: Optional[str] = None
+    rtsp_url: Optional[str] = None
+    ip_address: Optional[str] = None
+    port: Optional[int] = None
+    status: Optional[str] = None
+    laboratory_id: Optional[str] = None
+
+
+class CameraDeviceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    rtsp_url: str
+    ip_address: Optional[str] = None
+    port: Optional[int] = 554
+    status: str
+    is_active: bool = False
+    laboratory_id: Optional[str] = None
+    last_seen: Optional[datetime] = None
+    created_at: Optional[datetime] = None

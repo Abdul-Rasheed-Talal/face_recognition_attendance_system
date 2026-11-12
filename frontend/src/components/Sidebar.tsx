@@ -6,9 +6,10 @@ import {
   GraduationCap,
   Cpu,
   Layers,
+  Video,
 } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'attendance' | 'students' | 'portal' | 'system';
+export type NavTab = 'dashboard' | 'attendance' | 'students' | 'cameras' | 'portal' | 'system';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -32,9 +33,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, userR
     },
     {
       id: 'students' as NavTab,
-      label: 'Students & Enrollment',
-      description: 'Biometric face registration',
+      label: 'Students Management',
+      description: 'Directory & face enrollment',
       icon: Users,
+    },
+    {
+      id: 'cameras' as NavTab,
+      label: 'Cameras Management',
+      description: 'IP & Hikvision camera panel',
+      icon: Video,
     },
     {
       id: 'portal' as NavTab,

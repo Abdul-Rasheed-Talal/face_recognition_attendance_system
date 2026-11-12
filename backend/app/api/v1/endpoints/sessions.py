@@ -68,7 +68,6 @@ async def list_sessions(
 async def get_active_session(
     laboratory_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_teacher_or_admin),
 ):
     """Retrieves currently active laboratory session."""
     now = datetime.now(timezone.utc)

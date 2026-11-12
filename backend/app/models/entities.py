@@ -97,6 +97,8 @@ class CameraDevice(Base):
     status = Column(String(20), default="OFFLINE")  # CONNECTED, RECONNECTING, OFFLINE
     last_seen = Column(DateTime(timezone=True), nullable=True)
     entry_zone_config_json = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now)
 
     laboratory = relationship("Laboratory", back_populates="cameras")
 
@@ -121,7 +123,7 @@ class Student(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     roll_number = Column(String(30), unique=True, nullable=False, index=True)
     full_name = Column(String(100), nullable=False)
-    email = Column(String(120), unique=True, nullable=False, index=True)
+    email = Column(String(120), unique=False, nullable=True, index=True)
     department_id = Column(String(36), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False)
     class_id = Column(String(36), ForeignKey("classes.id", ondelete="RESTRICT"), nullable=False)
     status = Column(String(20), default="ACTIVE")  # ACTIVE, INACTIVE, GRADUATED

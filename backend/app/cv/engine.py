@@ -92,21 +92,37 @@ class VisionRecognitionEngine:
         logger.info("VisionRecognitionEngine stopped.")
 
     def get_annotated_frame_jpeg(self) -> Optional[bytes]:
-        """Returns the most recent annotated frame encoded as JPEG for web streaming."""
+        """
+        Dynamically renders the latest detection annotations over the real-time camera frame.
+        Yields smooth 25 FPS live preview without waiting for the slower AI inference loop.
+        """
+        has_frame, frame, _ = self.reader.get_latest_frame()
+        if has_frame and frame is not None:
+            proc_w, proc_h = self.processing_scale
+            display_frame = cv2.resize(frame, (proc_w, proc_h), interpolation=cv2.INTER_LINEAR)
+
+            with self._lock:
+                tracks = list(self._current_tracked_faces)
+                matches = dict(self._latest_matches)
+
+            annotated = self._render_annotations(display_frame, tracks, matches, proc_w, proc_h)
+            ret, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if ret:
+                jpeg_bytes = buf.tobytes()
+                with self._lock:
+                    self._latest_jpeg_bytes = jpeg_bytes
+                return jpeg_bytes
+
+        # Fallback to cached frame or placeholder if stream is connecting
         with self._lock:
             if self._latest_jpeg_bytes is not None:
                 return self._latest_jpeg_bytes
-            if self._latest_annotated_frame is not None:
-                ret, buf = cv2.imencode(".jpg", self._latest_annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                if ret:
-                    self._latest_jpeg_bytes = buf.tobytes()
-                    return self._latest_jpeg_bytes
-            # Initial placeholder frame so HTTP streams never stall with 0 bytes
-            blank = np.zeros((360, 640, 3), dtype=np.uint8)
-            cv2.putText(blank, "CONNECTING TO CAMERA FEED...", (120, 180),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 255), 2, cv2.LINE_AA)
-            _, buf = cv2.imencode(".jpg", blank, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            return buf.tobytes()
+
+        blank = np.zeros((360, 640, 3), dtype=np.uint8)
+        cv2.putText(blank, "CONNECTING TO CAMERA FEED...", (120, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 255), 2, cv2.LINE_AA)
+        _, buf = cv2.imencode(".jpg", blank, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return buf.tobytes()
 
     def get_health_status(self) -> Dict[str, Any]:
         """Provides combined telemetry of the camera and inference worker."""
