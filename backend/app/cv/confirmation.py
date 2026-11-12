@@ -25,10 +25,12 @@ class MultiFrameConfirmationEngine:
         required_confirmations: int = 3,
         window_size: int = 5,
         identity_cooldown_sec: float = 1800.0,  # 30 minutes cooldown per student
+        require_line_crossing: bool = False,   # Configurable: if False, confirms based on multi-frame face recognition
     ):
         self.required_confirmations = required_confirmations
         self.window_size = window_size
         self.identity_cooldown_sec = identity_cooldown_sec
+        self.require_line_crossing = require_line_crossing
 
         # track_id -> deque of recent RecognitionMatch objects
         self._track_observations: Dict[int, deque] = {}
@@ -45,7 +47,7 @@ class MultiFrameConfirmationEngine:
     ) -> Optional[AttendanceCandidateEvent]:
         """
         Records an identification observation for an active track.
-        If track has crossed the entry line and achieves k-of-m matching criteria,
+        If track has crossed the entry line (or line crossing is disabled) and achieves k-of-m matching criteria,
         and is not in cooldown, emits an AttendanceCandidateEvent.
         """
         now = current_timestamp if current_timestamp is not None else time.time()
@@ -60,8 +62,8 @@ class MultiFrameConfirmationEngine:
         if track.is_attendance_recorded:
             return None
 
-        # Verify entry line has been crossed (Directional Entry Validation)
-        if not track.has_crossed_entry_line:
+        # Verify entry line has been crossed (Directional Entry Validation if required)
+        if self.require_line_crossing and not track.has_crossed_entry_line:
             return None
 
         # Inspect observations in sliding window
@@ -105,6 +107,7 @@ class MultiFrameConfirmationEngine:
         # Mark track and student as recorded
         track.is_attendance_recorded = True
         track.confirmed_identity_id = dominant_sid
+        track.confirmed_identity_name = sample_match.student_name
         track.confirmed_confidence = avg_confidence
         self._identity_cooldowns[dominant_sid] = now
 

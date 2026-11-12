@@ -44,7 +44,7 @@ class FaceEnrollmentService:
         1. Decodes image array.
         2. Detects faces via YuNet.
         3. Enforces exactly ONE face in the enrollment portrait.
-        4. Validates minimum dimensions and blur score.
+        4. Validates minimum dimensions and blur score (lenient for smooth portrait photos).
         5. Aligns and extracts 128-d SFace embedding.
         6. Persists template in database.
         7. Hot-updates the in-memory FaceMatcher gallery.
@@ -62,7 +62,12 @@ class FaceEnrollmentService:
             return False, "Failed to decode image. Invalid image format.", None
 
         # Detect faces
-        detections = self.detector.detect(frame)
+        try:
+            detections = self.detector.detect(frame)
+        except Exception as det_err:
+            logger.error(f"Detection error during enrollment: {det_err}", exc_info=True)
+            return False, f"Face detection error: {str(det_err)}", None
+
         if len(detections) == 0:
             return False, "No face detected in enrollment image. Please ensure good lighting and front-facing pose.", None
 
@@ -70,14 +75,25 @@ class FaceEnrollmentService:
             return False, f"Multiple faces ({len(detections)}) detected. Enrollment image must contain only the student.", None
 
         detected = detections[0]
-        if not detected.is_valid_quality:
-            return False, f"Face quality rejected: {detected.rejection_reason}", None
+
+        # Lenient criteria tailored for high-quality static portrait photos
+        bx, by, bw, bh = detected.bbox
+        if bw < 30 or bh < 30:
+            return False, f"Face too small ({bw}x{bh}px). Please provide a closer portrait.", None
+
+        if detected.confidence < 0.55:
+            return False, f"Face pose confidence too low ({detected.confidence:.2f}). Please face the camera directly.", None
+
+        # Only reject completely blank or destroyed images (laplacian < 0.4)
+        if detected.blur_score < 0.4:
+            return False, f"Image is extremely blurred or unreadable (score: {detected.blur_score:.2f}). Please upload a sharper photo.", None
 
         # Align and extract embedding
         try:
             aligned = self.recognizer.align_and_crop(frame, detected)
             embedding = self.recognizer.extract_embedding(aligned)
         except Exception as e:
+            logger.error(f"Feature extraction error: {e}", exc_info=True)
             return False, f"Feature extraction failed: {str(e)}", None
 
         # Deactivate any previous templates for this student to maintain 1 primary template
@@ -98,6 +114,7 @@ class FaceEnrollmentService:
             is_active=True,
         )
         db.add(template)
+        await db.flush()  # Ensures template.id is generated before audit log insertion
 
         # Audit log
         audit = AuditLog(
@@ -145,4 +162,3 @@ class FaceEnrollmentService:
 
         logger.info(f"Loaded {loaded_count} student face templates into in-memory gallery.")
         return loaded_count
-

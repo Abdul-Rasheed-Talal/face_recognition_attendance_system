@@ -5,6 +5,7 @@ Filters out low-quality, blurry, or undersized face candidates before tracking a
 
 import os
 import logging
+import threading
 from typing import List, Tuple, Optional
 import cv2
 import numpy as np
@@ -25,8 +26,8 @@ class YuNetFaceDetector:
         model_path: str,
         confidence_threshold: float = 0.85,
         nms_threshold: float = 0.30,
-        min_face_width: int = 60,
-        laplacian_blur_threshold: float = 60.0,
+        min_face_width: int = 40,
+        laplacian_blur_threshold: float = 1.0,
         top_k: int = 5000,
     ):
         if not os.path.exists(model_path):
@@ -38,6 +39,7 @@ class YuNetFaceDetector:
         self.min_face_width = min_face_width
         self.laplacian_blur_threshold = laplacian_blur_threshold
         self.top_k = top_k
+        self._lock = threading.Lock()
 
         # Initialize detector with default resolution
         self.current_input_size = (640, 360)
@@ -73,66 +75,67 @@ class YuNetFaceDetector:
     def detect(self, frame: np.ndarray) -> List[DetectedFace]:
         """
         Detects faces in the given BGR frame and applies quality filtering.
-        Returns a list of DetectedFace objects.
+        Thread-safe execution.
         """
         if frame is None or frame.size == 0:
             return []
 
-        h, w = frame.shape[:2]
-        self._ensure_input_size(w, h)
+        with self._lock:
+            h, w = frame.shape[:2]
+            self._ensure_input_size(w, h)
 
-        # YuNet detection: returns (status, detections)
-        # Each detection row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rc, y_rc, x_lc, y_lc, score]
-        status, detections = self.detector.detect(frame)
-        if status == 0 or detections is None or len(detections) == 0:
-            return []
+            # YuNet detection: returns (status, detections)
+            # Each detection row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rc, y_rc, x_lc, y_lc, score]
+            status, detections = self.detector.detect(frame)
+            if status == 0 or detections is None or len(detections) == 0:
+                return []
 
-        results: List[DetectedFace] = []
+            results: List[DetectedFace] = []
 
-        for det in detections:
-            bbox_x = max(0, int(det[0]))
-            bbox_y = max(0, int(det[1]))
-            bbox_w = min(w - bbox_x, int(det[2]))
-            bbox_h = min(h - bbox_y, int(det[3]))
-            score = float(det[14])
+            for det in detections:
+                bbox_x = max(0, int(det[0]))
+                bbox_y = max(0, int(det[1]))
+                bbox_w = min(w - bbox_x, int(det[2]))
+                bbox_h = min(h - bbox_y, int(det[3]))
+                score = float(det[14])
 
-            # Extract 5 landmarks
-            landmarks = FacialLandmarks(
-                right_eye=(float(det[4]), float(det[5])),
-                left_eye=(float(det[6]), float(det[7])),
-                nose_tip=(float(det[8]), float(det[9])),
-                mouth_right=(float(det[10]), float(det[11])),
-                mouth_left=(float(det[12]), float(det[13])),
-            )
+                # Extract 5 landmarks
+                landmarks = FacialLandmarks(
+                    right_eye=(float(det[4]), float(det[5])),
+                    left_eye=(float(det[6]), float(det[7])),
+                    nose_tip=(float(det[8]), float(det[9])),
+                    mouth_right=(float(det[10]), float(det[11])),
+                    mouth_left=(float(det[12]), float(det[13])),
+                )
 
-            # Crop face region for blur assessment
-            face_crop = frame[bbox_y : bbox_y + bbox_h, bbox_x : bbox_x + bbox_w]
-            blur_score = self.calculate_blur_score(face_crop)
+                # Crop face region for blur assessment
+                face_crop = frame[bbox_y : bbox_y + bbox_h, bbox_x : bbox_x + bbox_w]
+                blur_score = self.calculate_blur_score(face_crop)
 
-            # Quality validation
-            is_valid = True
-            rejection_reason = None
+                # Quality validation
+                is_valid = True
+                rejection_reason = None
 
-            if bbox_w < self.min_face_width or bbox_h < self.min_face_width:
-                is_valid = False
-                rejection_reason = f"Face too small: {bbox_w}x{bbox_h}px (min: {self.min_face_width}px)"
-            elif score < self.confidence_threshold:
-                is_valid = False
-                rejection_reason = f"Confidence too low: {score:.2f} (threshold: {self.confidence_threshold})"
-            elif blur_score < self.laplacian_blur_threshold:
-                is_valid = False
-                rejection_reason = f"Motion blur detected: laplacian {blur_score:.1f} < {self.laplacian_blur_threshold}"
+                if bbox_w < self.min_face_width or bbox_h < self.min_face_width:
+                    is_valid = False
+                    rejection_reason = f"Face too small: {bbox_w}x{bbox_h}px (min: {self.min_face_width}px)"
+                elif score < self.confidence_threshold:
+                    is_valid = False
+                    rejection_reason = f"Confidence too low: {score:.2f} (threshold: {self.confidence_threshold})"
+                elif blur_score < self.laplacian_blur_threshold:
+                    is_valid = False
+                    rejection_reason = f"Motion blur detected: laplacian {blur_score:.1f} < {self.laplacian_blur_threshold}"
 
-            detected = DetectedFace(
-                bbox=(bbox_x, bbox_y, bbox_w, bbox_h),
-                confidence=score,
-                landmarks=landmarks,
-                raw_yunet_output=det,
-                blur_score=blur_score,
-                is_valid_quality=is_valid,
-                rejection_reason=rejection_reason,
-            )
-            results.append(detected)
+                detected = DetectedFace(
+                    bbox=(bbox_x, bbox_y, bbox_w, bbox_h),
+                    confidence=score,
+                    landmarks=landmarks,
+                    raw_yunet_output=det,
+                    blur_score=blur_score,
+                    is_valid_quality=is_valid,
+                    rejection_reason=rejection_reason,
+                )
+                results.append(detected)
 
-        return results
+            return results
 

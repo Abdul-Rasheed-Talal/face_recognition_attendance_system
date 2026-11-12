@@ -166,6 +166,7 @@ async def lifespan(app: FastAPI):
         required_confirmations=settings.CV_MULTI_FRAME_CONFIRMATION_COUNT,
         window_size=settings.CV_MULTI_FRAME_WINDOW_SIZE,
         identity_cooldown_sec=settings.CV_TRACK_COOLDOWN_SECONDS,
+        require_line_crossing=settings.CV_REQUIRE_LINE_CROSSING,
     )
 
     # 3. Initialize video reader
@@ -199,11 +200,20 @@ async def lifespan(app: FastAPI):
         line_gate=line_gate,
         confirmation_engine=confirmation_engine,
         processing_fps=settings.CV_PROCESSING_FPS,
+        processing_scale=(settings.CV_PROCESSING_WIDTH, settings.CV_PROCESSING_HEIGHT),
         on_attendance_event=on_attendance_candidate,
     )
 
-    # 6. Initialize enrollment service & load enrolled templates
-    enrollment_service = FaceEnrollmentService(detector, recognizer, matcher)
+    # 6. Initialize enrollment service with dedicated CV models to eliminate any thread contention with the video loop
+    enroll_detector = YuNetFaceDetector(
+        model_path=settings.YUNET_MODEL_PATH,
+        confidence_threshold=0.50,
+        nms_threshold=settings.CV_NMS_THRESHOLD,
+        min_face_width=25,
+        laplacian_blur_threshold=0.3,
+    )
+    enroll_recognizer = SFaceFeatureExtractor(model_path=settings.SFACE_MODEL_PATH)
+    enrollment_service = FaceEnrollmentService(enroll_detector, enroll_recognizer, matcher)
     async with AsyncSessionLocal() as db:
         await enrollment_service.load_all_active_templates_to_gallery(db)
 

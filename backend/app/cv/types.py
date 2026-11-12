@@ -63,6 +63,7 @@ class TrackedFace:
     crossing_timestamp: Optional[float] = None
     crossing_direction: Optional[str] = None  # "IN", "OUT", or "NONE"
     confirmed_identity_id: Optional[str] = None
+    confirmed_identity_name: Optional[str] = None
     confirmed_confidence: Optional[float] = None
     is_attendance_recorded: bool = False
     lockout_until_timestamp: float = 0.0

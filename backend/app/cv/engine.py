@@ -158,8 +158,22 @@ class VisionRecognitionEngine:
 
                 if matched_det is not None:
                     try:
-                        # 4c. 5-point alignment and SFace feature extraction
-                        aligned = self.recognizer.align_and_crop(scaled_frame, matched_det)
+                        # 4c. High-resolution face alignment:
+                        # Scale landmarks back to original camera resolution so SFace extracts sharp features for far persons
+                        scale_x = orig_w / float(proc_w)
+                        scale_y = orig_h / float(proc_h)
+
+                        scaled_yunet_output = matched_det.raw_yunet_output.copy()
+                        scaled_yunet_output[[0, 2, 4, 6, 8, 10, 12]] *= scale_x
+                        scaled_yunet_output[[1, 3, 5, 7, 9, 11, 13]] *= scale_y
+
+                        try:
+                            aligned = self.recognizer.align_crop_raw(frame, scaled_yunet_output)
+                            if aligned is None or aligned.shape[:2] != (112, 112):
+                                aligned = self.recognizer.align_and_crop(scaled_frame, matched_det)
+                        except Exception:
+                            aligned = self.recognizer.align_and_crop(scaled_frame, matched_det)
+
                         embedding = self.recognizer.extract_embedding(aligned)
 
                         # 4d. Vectorized cosine similarity match
@@ -234,7 +248,7 @@ class VisionRecognitionEngine:
             # Determine color scheme: Green = Attended/Confirmed, Orange = Processing/Crossing, Red = Unknown
             if track.is_attendance_recorded:
                 color = (0, 255, 0) # Green
-                tag = f"ATTENDED: {track.confirmed_identity_id}"
+                tag = f"ATTENDED: {track.confirmed_identity_name or track.confirmed_identity_id}"
             elif match and match.is_confident_match:
                 color = (255, 200, 0) # Cyan/Yellow
                 tag = f"{match.student_name} ({match.similarity_score:.2f})"

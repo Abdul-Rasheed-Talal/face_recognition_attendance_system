@@ -1,7 +1,9 @@
 """
 Face Enrollment and Biometric Template Endpoints.
+Accessible to Teachers and Administrators.
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +12,9 @@ from sqlalchemy.orm import selectinload
 from backend.app.core.database import get_db
 from backend.app.models.entities import Student, FaceTemplate, User, AuditLog
 from backend.app.schemas.domain import EnrollmentStatusOut
-from backend.app.api.v1.deps import require_teacher_or_admin, require_admin
+from backend.app.api.v1.deps import require_teacher_or_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/enrollment", tags=["Biometric Enrollment"])
 
@@ -52,13 +56,14 @@ async def enroll_face(
     request: Request,
     image: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_teacher_or_admin),
 ):
     """
     Enrolls a student's facial image into biometric templates.
     Requires exactly one frontal face in clear focus.
+    Accessible to authorized Teachers and Administrators.
     """
-    enrollment_service = request.app.state.enrollment_service
+    enrollment_service = getattr(request.app.state, "enrollment_service", None)
     if not enrollment_service:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -69,14 +74,21 @@ async def enroll_face(
     if len(image_bytes) == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty image payload.")
 
-    success, message, template = await enrollment_service.enroll_from_image_bytes(
-        db=db,
-        student_id=student_id,
-        image_bytes=image_bytes,
-        admin_user_id=admin.id,
-    )
+    try:
+        success, message, template = await enrollment_service.enroll_from_image_bytes(
+            db=db,
+            student_id=student_id,
+            image_bytes=image_bytes,
+            admin_user_id=user.id,
+        )
+    except Exception as e:
+        logger.error(f"Enrollment endpoint unhandled exception: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Enrollment processing error: {str(e)}",
+        )
 
-    if not success:
+    if not success or template is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
 
     return {
@@ -92,7 +104,7 @@ async def delete_face_templates(
     student_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(require_teacher_or_admin),
 ):
     """Deletes all biometric templates for a student."""
     res = await db.execute(
@@ -103,13 +115,13 @@ async def delete_face_templates(
         await db.delete(t)
 
     # Remove from active memory gallery
-    matcher = request.app.state.matcher
+    matcher = getattr(request.app.state, "matcher", None)
     if matcher:
         matcher.remove_student(student_id)
 
     # Audit log
     audit = AuditLog(
-        user_id=admin.id,
+        user_id=user.id,
         action="DELETE_BIOMETRIC_TEMPLATES",
         entity_type="face_templates",
         entity_id=student_id,
@@ -118,4 +130,3 @@ async def delete_face_templates(
     db.add(audit)
     await db.commit()
     return None
-

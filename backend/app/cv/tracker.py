@@ -46,10 +46,10 @@ class FaceTracker:
 
     def __init__(
         self,
-        max_missed_frames: int = 5,
-        min_iou_match: float = 0.25,
-        max_centroid_distance_px: float = 120.0,
-        trajectory_history_len: int = 25,
+        max_missed_frames: int = 6,
+        min_iou_match: float = 0.15,
+        max_centroid_distance_px: float = 140.0,
+        trajectory_history_len: int = 30,
     ):
         self.max_missed_frames = max_missed_frames
         self.min_iou_match = min_iou_match
@@ -97,11 +97,13 @@ class FaceTracker:
                 dist = np.hypot(tx - dx, ty - dy)
                 iou = calculate_iou(track.current_bbox, det.bbox)
 
-                # Matching metric: weighted combination of IoU and spatial distance
-                if dist > self.max_centroid_distance_px or iou < self.min_iou_match:
+                # Matching metric: allow match if close in distance even if IoU is zero (e.g. distant small face moving between frames)
+                if dist > self.max_centroid_distance_px and iou < self.min_iou_match:
                     cost_matrix[i, j] = 9999.0
+                elif iou > 0:
+                    cost_matrix[i, j] = (1.0 - iou) + 0.5 * (dist / self.max_centroid_distance_px)
                 else:
-                    cost_matrix[i, j] = (1.0 - iou) + (dist / self.max_centroid_distance_px)
+                    cost_matrix[i, j] = 1.0 + (dist / self.max_centroid_distance_px)
 
         # Greedy bipartite matching
         matched_tracks = set()

@@ -1,9 +1,11 @@
 """
 In-Memory Vector Gallery and Cosine Similarity Matching Engine.
 Performs vectorized BLAS dot products, ambiguity margin evaluation, and unknown face rejection.
+Thread-safe execution.
 """
 
 import logging
+import threading
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
@@ -28,6 +30,7 @@ class FaceMatcher:
     """
     In-memory gallery matcher.
     Maintains a contiguous matrix of enrolled student embeddings for sub-millisecond search.
+    Protected by threading locks for safe concurrent reads & writes.
     """
 
     def __init__(
@@ -37,6 +40,7 @@ class FaceMatcher:
     ):
         self.similarity_threshold = similarity_threshold
         self.ambiguity_margin = ambiguity_margin
+        self._lock = threading.Lock()
 
         self._templates: Dict[str, StudentTemplate] = {}
         self._gallery_ids: List[str] = []
@@ -44,32 +48,36 @@ class FaceMatcher:
 
     @property
     def enrolled_count(self) -> int:
-        return len(self._templates)
+        with self._lock:
+            return len(self._templates)
 
     def enroll_student(self, student_id: str, roll_number: str, full_name: str, embedding: np.ndarray) -> None:
         """Enrolls or updates a student's facial template in the in-memory gallery."""
-        template = StudentTemplate(student_id, roll_number, full_name, embedding)
-        self._templates[student_id] = template
-        self._rebuild_matrix()
-        logger.info(f"Enrolled student: {full_name} ({roll_number}). Total gallery size: {len(self._templates)}")
+        with self._lock:
+            template = StudentTemplate(student_id, roll_number, full_name, embedding)
+            self._templates[student_id] = template
+            self._rebuild_matrix_unlocked()
+            logger.info(f"Enrolled student: {full_name} ({roll_number}). Total gallery size: {len(self._templates)}")
 
     def remove_student(self, student_id: str) -> bool:
         """Removes a student template from the gallery."""
-        if student_id in self._templates:
-            del self._templates[student_id]
-            self._rebuild_matrix()
-            logger.info(f"Removed student ID {student_id} from gallery. New size: {len(self._templates)}")
-            return True
-        return False
+        with self._lock:
+            if student_id in self._templates:
+                del self._templates[student_id]
+                self._rebuild_matrix_unlocked()
+                logger.info(f"Removed student ID {student_id} from gallery. New size: {len(self._templates)}")
+                return True
+            return False
 
     def clear(self) -> None:
         """Clears all enrolled templates."""
-        self._templates.clear()
-        self._gallery_ids.clear()
-        self._gallery_matrix = None
+        with self._lock:
+            self._templates.clear()
+            self._gallery_ids.clear()
+            self._gallery_matrix = None
 
-    def _rebuild_matrix(self) -> None:
-        """Reconstructs the contiguous NumPy matrix for vectorized BLAS search."""
+    def _rebuild_matrix_unlocked(self) -> None:
+        """Reconstructs the contiguous NumPy matrix for vectorized BLAS search (caller must hold _lock)."""
         if not self._templates:
             self._gallery_ids = []
             self._gallery_matrix = None
@@ -84,55 +92,68 @@ class FaceMatcher:
         Matches a probe embedding against the enrolled gallery.
         Returns a structured RecognitionMatch with status CONFIRMED, AMBIGUOUS, or UNKNOWN.
         """
-        if self._gallery_matrix is None or len(self._gallery_ids) == 0:
-            return RecognitionMatch(
-                student_id=None,
-                student_name=None,
-                roll_number=None,
-                similarity_score=0.0,
-                status_label="NO_ENROLLED_STUDENTS"
-            )
+        with self._lock:
+            if self._gallery_matrix is None or len(self._gallery_ids) == 0:
+                return RecognitionMatch(
+                    student_id=None,
+                    student_name=None,
+                    roll_number=None,
+                    similarity_score=0.0,
+                    status_label="NO_ENROLLED_STUDENTS"
+                )
 
-        probe = probe_embedding.flatten().astype(np.float32)
-        norm = np.linalg.norm(probe)
-        if norm > 1e-6:
-            probe /= norm
+            probe = probe_embedding.flatten().astype(np.float32)
+            norm = np.linalg.norm(probe)
+            if norm > 1e-6:
+                probe /= norm
 
-        # Vectorized cosine similarity dot-product: (N, 128) • (128,) -> (N,)
-        similarities = np.dot(self._gallery_matrix, probe)
+            # Vectorized cosine similarity dot-product: (N, 128) • (128,) -> (N,)
+            similarities = np.dot(self._gallery_matrix, probe)
 
-        # Sort top indices
-        if len(similarities) == 1:
-            best_idx = 0
-            best_score = float(similarities[0])
-            second_score = 0.0
-            margin = best_score
-        else:
-            sorted_indices = np.argsort(similarities)[::-1]
-            best_idx = int(sorted_indices[0])
-            second_idx = int(sorted_indices[1])
-            best_score = float(similarities[best_idx])
-            second_score = float(similarities[second_idx])
-            margin = best_score - second_score
+            # Sort top indices
+            if len(similarities) == 1:
+                best_idx = 0
+                best_score = float(similarities[0])
+                second_score = 0.0
+                margin = best_score
+            else:
+                sorted_indices = np.argsort(similarities)[::-1]
+                best_idx = int(sorted_indices[0])
+                second_idx = int(sorted_indices[1])
+                best_score = float(similarities[best_idx])
+                second_score = float(similarities[second_idx])
+                margin = best_score - second_score
 
-        best_student_id = self._gallery_ids[best_idx]
-        template = self._templates[best_student_id]
+            best_student_id = self._gallery_ids[best_idx]
+            template = self._templates[best_student_id]
 
-        # Decision boundaries
-        if best_score < self.similarity_threshold:
-            return RecognitionMatch(
-                student_id=None,
-                student_name=None,
-                roll_number=None,
-                similarity_score=best_score,
-                second_best_score=second_score,
-                margin=margin,
-                is_confident_match=False,
-                is_ambiguous=False,
-                status_label="UNKNOWN"
-            )
+            # Decision boundaries
+            if best_score < self.similarity_threshold:
+                return RecognitionMatch(
+                    student_id=None,
+                    student_name=None,
+                    roll_number=None,
+                    similarity_score=best_score,
+                    second_best_score=second_score,
+                    margin=margin,
+                    is_confident_match=False,
+                    is_ambiguous=False,
+                    status_label="UNKNOWN"
+                )
 
-        if margin < self.ambiguity_margin:
+            if margin < self.ambiguity_margin:
+                return RecognitionMatch(
+                    student_id=template.student_id,
+                    student_name=template.full_name,
+                    roll_number=template.roll_number,
+                    similarity_score=best_score,
+                    second_best_score=second_score,
+                    margin=margin,
+                    is_confident_match=False,
+                    is_ambiguous=True,
+                    status_label="AMBIGUOUS"
+                )
+
             return RecognitionMatch(
                 student_id=template.student_id,
                 student_name=template.full_name,
@@ -140,20 +161,7 @@ class FaceMatcher:
                 similarity_score=best_score,
                 second_best_score=second_score,
                 margin=margin,
-                is_confident_match=False,
-                is_ambiguous=True,
-                status_label="AMBIGUOUS"
+                is_confident_match=True,
+                is_ambiguous=False,
+                status_label="CONFIRMED"
             )
-
-        return RecognitionMatch(
-            student_id=template.student_id,
-            student_name=template.full_name,
-            roll_number=template.roll_number,
-            similarity_score=best_score,
-            second_best_score=second_score,
-            margin=margin,
-            is_confident_match=True,
-            is_ambiguous=False,
-            status_label="CONFIRMED"
-        )
-
