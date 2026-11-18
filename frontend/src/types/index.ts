@@ -95,16 +95,26 @@ export interface DashboardStatistics {
   camera_health: CameraHealth;
 }
 
+export interface SubjectItem {
+  id: string;
+  department_id: string;
+  code: string;
+  name: string;
+}
+
 export interface LiveAttendanceEvent {
   type: string;
-  record_id: string;
-  student_id: string;
-  student_name: string;
-  roll_number: string;
-  session_id: string;
-  status: string;
-  confidence: number;
+  record_id?: string;
+  student_id?: string;
+  student_name?: string;
+  roll_number?: string;
+  class_name?: string;
+  subject_name?: string;
+  session_id?: string;
+  status?: string;
+  confidence?: number;
   timestamp: string;
+  message?: string;
 }
 
 export interface CorrectionRequest {

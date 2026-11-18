@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { TimetableView } from './components/TimetableView';
 import { StudentsView } from './components/StudentsView';
 import { AttendanceView } from './components/AttendanceView';
-import { CamerasView } from './components/CamerasView';
-import { StudentPortalView } from './components/StudentPortalView';
-import { SystemTelemetryView } from './components/SystemTelemetryView';
+import { GateCameraSettings } from './components/GateCameraSettings';
 import { LoginModal } from './components/LoginModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
@@ -41,7 +40,7 @@ export function App() {
     };
   }, []);
 
-  // Periodic Telemetry Polling (Every 5 seconds)
+  // Periodic Telemetry Polling (Every 4 seconds)
   const pollTelemetry = useCallback(async () => {
     try {
       const [sess, s] = await Promise.all([
@@ -57,15 +56,16 @@ export function App() {
 
   useEffect(() => {
     pollTelemetry();
-    const interval = setInterval(pollTelemetry, 5000);
+    const interval = setInterval(pollTelemetry, 4000);
     return () => clearInterval(interval);
   }, [pollTelemetry]);
 
   // WebSocket event handler for real-time live events
   const handleLiveEvent = useCallback((event: LiveAttendanceEvent) => {
-    setRecentEvents((prev) => [event, ...prev.slice(0, 24)]);
+    setRecentEvents((prev) => [event, ...prev.slice(0, 29)]);
     // Refresh stats when an attendance event arrives
     api.getDashboardStatistics().then(setStats).catch(() => {});
+    api.getActiveSession().then(setActiveSession).catch(() => {});
   }, []);
 
   const { isConnected: isWsConnected } = useWebSocket(handleLiveEvent);
@@ -76,7 +76,7 @@ export function App() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-900 text-slate-100">
+    <div className="flex flex-col min-h-screen bg-stone-50 text-stone-800">
       {/* Top Header */}
       <Navbar
         currentUser={currentUser}
@@ -95,14 +95,17 @@ export function App() {
           userRole={currentUser?.role}
         />
 
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-900/50">
+        <main className="flex-1 overflow-y-auto p-6 bg-stone-50">
           {currentTab === 'dashboard' && (
             <DashboardView
               stats={stats}
               recentEvents={recentEvents}
+              activeSession={activeSession}
               onRefresh={pollTelemetry}
             />
           )}
+
+          {currentTab === 'timetable' && <TimetableView />}
 
           {currentTab === 'attendance' && <AttendanceView />}
 
@@ -113,18 +116,13 @@ export function App() {
             />
           )}
 
-          {currentTab === 'cameras' && (
-            <CamerasView
+          {currentTab === 'camera' && (
+            <GateCameraSettings
               currentUser={currentUser}
-              onOpenLogin={() => setIsLoginModalOpen(true)}
               cameraHealth={stats?.camera_health}
+              onOpenLogin={() => setIsLoginModalOpen(true)}
+              onRefresh={pollTelemetry}
             />
-          )}
-
-          {currentTab === 'portal' && <StudentPortalView />}
-
-          {currentTab === 'system' && (
-            <SystemTelemetryView cameraHealth={stats?.camera_health} />
           )}
         </main>
       </div>

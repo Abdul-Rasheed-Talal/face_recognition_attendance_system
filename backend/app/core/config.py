@@ -49,19 +49,19 @@ class Settings(BaseSettings):
     CV_LAPLACIAN_BLUR_THRESHOLD: float = 0.5         # Prevents false blur rejection on smooth portrait faces
     CV_COSINE_SIMILARITY_THRESHOLD: float = 0.363
     CV_AMBIGUITY_MARGIN: float = 0.080
-    CV_MULTI_FRAME_CONFIRMATION_COUNT: int = 3
-    CV_MULTI_FRAME_WINDOW_SIZE: int = 5
+    CV_MULTI_FRAME_CONFIRMATION_COUNT: int = 2
+    CV_MULTI_FRAME_WINDOW_SIZE: int = 4
     CV_TRACK_COOLDOWN_SECONDS: float = 1800.0
-    CV_REQUIRE_LINE_CROSSING: bool = False  # False: confirms upon 3-of-5 face matches; True: additionally requires virtual doorway crossing
+    CV_REQUIRE_LINE_CROSSING: bool = False  # False: continuous gate recognition; True: requires doorway line-crossing
 
     # Camera & Doorway Gate
     CAMERA_SOURCE: Union[str, int] = "0"
     CAMERA_SOURCE_TYPE: str = "webcam"  # webcam, rtsp, hikvision, or file
     CAMERA_RTSP_TRANSPORT: str = "tcp"
-    CAMERA_FPS: int = 25
-    CV_PROCESSING_FPS: float = 3.33
-    CV_PROCESSING_WIDTH: int = 960
-    CV_PROCESSING_HEIGHT: int = 540
+    CAMERA_FPS: int = 15
+    CV_PROCESSING_FPS: float = 10.0
+    CV_PROCESSING_WIDTH: int = 640
+    CV_PROCESSING_HEIGHT: int = 360
     CAMERA_WIDTH: int = 1280
     CAMERA_HEIGHT: int = 720
     CAMERA_RECONNECT_INTERVAL_SECONDS: float = 3.0

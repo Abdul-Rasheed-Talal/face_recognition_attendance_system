@@ -44,9 +44,10 @@ class VisionRecognitionEngine:
         tracker: Optional[FaceTracker] = None,
         line_gate: Optional[DirectionalLineGate] = None,
         confirmation_engine: Optional[MultiFrameConfirmationEngine] = None,
-        processing_fps: float = 3.33,  # Evaluate ~3.3 frames per second on CPU
+        processing_fps: float = 10.0,
         processing_scale: Tuple[int, int] = (640, 360),
-        camera_id: str = "CAM_LAB_01",
+        camera_id: str = "CAM_GATE_01",
+        require_line_crossing: bool = False,
         on_attendance_event: Optional[Callable[[AttendanceCandidateEvent], None]] = None,
     ):
         self.reader = reader
@@ -60,6 +61,7 @@ class VisionRecognitionEngine:
         self.processing_fps = processing_fps
         self.processing_scale = processing_scale
         self.camera_id = camera_id
+        self.require_line_crossing = require_line_crossing
         self.on_attendance_event = on_attendance_event
 
         self._thread: Optional[threading.Thread] = None
@@ -93,36 +95,40 @@ class VisionRecognitionEngine:
 
     def get_annotated_frame_jpeg(self) -> Optional[bytes]:
         """
-        Dynamically renders the latest detection annotations over the real-time camera frame.
-        Yields smooth 25 FPS live preview without waiting for the slower AI inference loop.
+        Returns the latest annotated JPEG frame pre-rendered by the recognition worker.
+        Zero CPU overhead per request for smooth streaming.
         """
-        has_frame, frame, _ = self.reader.get_latest_frame()
-        if has_frame and frame is not None:
-            proc_w, proc_h = self.processing_scale
-            display_frame = cv2.resize(frame, (proc_w, proc_h), interpolation=cv2.INTER_LINEAR)
-
-            with self._lock:
-                tracks = list(self._current_tracked_faces)
-                matches = dict(self._latest_matches)
-
-            annotated = self._render_annotations(display_frame, tracks, matches, proc_w, proc_h)
-            ret, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ret:
-                jpeg_bytes = buf.tobytes()
-                with self._lock:
-                    self._latest_jpeg_bytes = jpeg_bytes
-                return jpeg_bytes
-
-        # Fallback to cached frame or placeholder if stream is connecting
         with self._lock:
             if self._latest_jpeg_bytes is not None:
                 return self._latest_jpeg_bytes
 
+        # If pipeline has not generated a frame yet, return clean frame from reader
+        has_frame, frame, _ = self.reader.get_latest_frame()
+        if has_frame and frame is not None:
+            proc_w, proc_h = self.processing_scale
+            display_frame = cv2.resize(frame, (proc_w, proc_h), interpolation=cv2.INTER_LINEAR)
+            ret, buf = cv2.imencode(".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ret:
+                return buf.tobytes()
+
         blank = np.zeros((360, 640, 3), dtype=np.uint8)
-        cv2.putText(blank, "CONNECTING TO CAMERA FEED...", (120, 180),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 200, 255), 2, cv2.LINE_AA)
+        blank[:] = (245, 245, 245)
+        cv2.putText(blank, "Connecting to Gate Camera...", (160, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.70, (100, 100, 100), 2, cv2.LINE_AA)
         _, buf = cv2.imencode(".jpg", blank, [cv2.IMWRITE_JPEG_QUALITY, 70])
         return buf.tobytes()
+
+    def get_raw_frame_jpeg(self) -> Optional[bytes]:
+        """
+        Retrieves the latest clean, unannotated high-resolution camera frame as JPEG.
+        Used for student biometric face enrollment and live camera capture.
+        """
+        has_frame, frame, _ = self.reader.get_latest_frame()
+        if has_frame and frame is not None:
+            ret, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            if ret:
+                return buf.tobytes()
+        return None
 
     def get_health_status(self) -> Dict[str, Any]:
         """Provides combined telemetry of the camera and inference worker."""
@@ -260,45 +266,49 @@ class VisionRecognitionEngine:
         """Draws visual overlays (entrance gate, track trajectories, bounding boxes, identity tags)."""
         canvas = frame.copy()
 
-        # Draw virtual entrance boundary line
-        p1, p2 = self.line_gate.get_absolute_gate(w, h)
-        p1_i = (int(p1[0]), int(p1[1]))
-        p2_i = (int(p2[0]), int(p2[1]))
-        cv2.line(canvas, p1_i, p2_i, (0, 165, 255), 2, cv2.LINE_AA)
-        cv2.putText(canvas, "LAB ENTRANCE GATE", (p1_i[0] + 5, p1_i[1] - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, cv2.LINE_AA)
+        # Draw virtual entrance boundary line only if enabled
+        if self.require_line_crossing:
+            p1, p2 = self.line_gate.get_absolute_gate(w, h)
+            p1_i = (int(p1[0]), int(p1[1]))
+            p2_i = (int(p2[0]), int(p2[1]))
+            cv2.line(canvas, p1_i, p2_i, (0, 165, 255), 2, cv2.LINE_AA)
+            cv2.putText(canvas, "ENTRANCE GATE", (p1_i[0] + 5, p1_i[1] - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, cv2.LINE_AA)
 
         # Draw each tracked face
         for track in tracks:
             bx, by, bw, bh = track.current_bbox
             match = matches.get(track.track_id)
 
-            # Determine color scheme: Green = Attended/Confirmed, Orange = Processing/Crossing, Red = Unknown
+            # Clean color scheme:
+            # Green = Verified & Recorded
+            # Emerald/Cyan = Confident Match
+            # Subtle Gray = Unregistered / Evaluating (Never alarming red)
             if track.is_attendance_recorded:
-                color = (0, 255, 0) # Green
+                color = (46, 204, 113)  # Emerald Green
                 tag = f"ATTENDED: {track.confirmed_identity_name or track.confirmed_identity_id}"
             elif match and match.is_confident_match:
-                color = (255, 200, 0) # Cyan/Yellow
+                color = (39, 174, 96)   # Green
                 tag = f"{match.student_name} ({match.similarity_score:.2f})"
             elif match and match.is_ambiguous:
-                color = (0, 140, 255) # Orange
-                tag = f"AMBIGUOUS ({match.similarity_score:.2f})"
+                color = (243, 156, 18)  # Subtle Amber
+                tag = f"Evaluating ({match.similarity_score:.2f})"
             else:
-                color = (0, 0, 255) # Red
-                tag = f"Track #{track.track_id} (Evaluating)"
+                color = (160, 160, 160) # Subtle Neutral Gray
+                tag = f"Face #{track.track_id}"
 
             # Bounding box
             cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), color, 2)
 
             # Trajectory polyline
-            if len(track.trajectory) > 1:
+            if len(track.trajectory) > 1 and self.require_line_crossing:
                 pts = np.array(track.trajectory, dtype=np.int32).reshape((-1, 1, 2))
                 cv2.polylines(canvas, [pts], False, (255, 255, 255), 1, cv2.LINE_AA)
 
             # Label banner
             cv2.rectangle(canvas, (bx, max(0, by - 22)), (bx + bw, by), color, -1)
             cv2.putText(canvas, tag, (bx + 3, max(14, by - 6)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 0, 0), 1, cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
 
         return canvas
 

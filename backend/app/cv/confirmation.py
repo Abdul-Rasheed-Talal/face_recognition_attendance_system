@@ -22,8 +22,8 @@ class MultiFrameConfirmationEngine:
 
     def __init__(
         self,
-        required_confirmations: int = 3,
-        window_size: int = 5,
+        required_confirmations: int = 2,
+        window_size: int = 4,
         identity_cooldown_sec: float = 1800.0,  # 30 minutes cooldown per student
         require_line_crossing: bool = False,   # Configurable: if False, confirms based on multi-frame face recognition
     ):

@@ -5,22 +5,30 @@ Laboratory Sessions API Endpoints.
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import get_db
 from backend.app.models.entities import LabSession, Subject, Laboratory, User, ClassGroup
-from backend.app.schemas.domain import SessionCreate, SessionOut
+from backend.app.schemas.domain import SessionCreate, SessionOut, SubjectOut
 from backend.app.api.v1.deps import require_teacher_or_admin
 
 router = APIRouter(prefix="/sessions", tags=["Lab Sessions"])
+
+
+@router.get("/subjects", response_model=List[SubjectOut])
+async def list_subjects(db: AsyncSession = Depends(get_db)):
+    """Lists all academic subjects for timetable scheduling."""
+    res = await db.execute(select(Subject).order_by(Subject.name))
+    return res.scalars().all()
 
 
 @router.get("", response_model=List[SessionOut])
 async def list_sessions(
     laboratory_id: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    class_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_teacher_or_admin),
 ):
@@ -33,13 +41,15 @@ async def list_sessions(
             selectinload(LabSession.teacher),
             selectinload(LabSession.class_group),
         )
-        .order_by(LabSession.start_time.desc())
+        .order_by(LabSession.start_time.asc())
     )
 
     if laboratory_id:
         query = query.where(LabSession.laboratory_id == laboratory_id)
     if status_filter:
         query = query.where(LabSession.status == status_filter)
+    if class_id:
+        query = query.where(LabSession.class_id == class_id)
 
     res = await db.execute(query)
     sessions = res.scalars().all()
@@ -51,10 +61,10 @@ async def list_sessions(
                 id=s.id,
                 subject_name=s.subject.name if s.subject else "Unknown Subject",
                 subject_code=s.subject.code if s.subject else "N/A",
-                laboratory_name=s.laboratory.name if s.laboratory else "Unknown Lab",
+                laboratory_name=s.laboratory.name if s.laboratory else "Gate / Laboratory",
                 room_number=s.laboratory.room_number if s.laboratory else "N/A",
-                teacher_name=s.teacher.full_name if s.teacher else "Unknown Teacher",
-                class_name=s.class_group.name if s.class_group else "Unknown Class",
+                teacher_name=s.teacher.full_name if s.teacher else "Teacher",
+                class_name=s.class_group.name if s.class_group else "Class",
                 start_time=s.start_time,
                 end_time=s.end_time,
                 late_grace_minutes=s.late_grace_minutes,
@@ -177,4 +187,67 @@ async def create_session(
         late_grace_minutes=s.late_grace_minutes,
         status=s.status,
     )
+
+
+@router.put("/{session_id}", response_model=SessionOut)
+async def update_session_status(
+    session_id: str,
+    status_update: Optional[str] = Query(None),
+    late_grace_minutes: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Updates session status (e.g. ACTIVE, COMPLETED, CANCELLED) or grace period."""
+    res = await db.execute(
+        select(LabSession)
+        .options(
+            selectinload(LabSession.subject),
+            selectinload(LabSession.laboratory),
+            selectinload(LabSession.teacher),
+            selectinload(LabSession.class_group),
+        )
+        .where(LabSession.id == session_id)
+    )
+    s = res.scalars().first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    if status_update:
+        s.status = status_update
+    if late_grace_minutes is not None:
+        s.late_grace_minutes = late_grace_minutes
+
+    await db.commit()
+    await db.refresh(s)
+
+    return SessionOut(
+        id=s.id,
+        subject_name=s.subject.name if s.subject else "Unknown Subject",
+        subject_code=s.subject.code if s.subject else "N/A",
+        laboratory_name=s.laboratory.name if s.laboratory else "Unknown Lab",
+        room_number=s.laboratory.room_number if s.laboratory else "N/A",
+        teacher_name=s.teacher.full_name if s.teacher else "Unknown Teacher",
+        class_name=s.class_group.name if s.class_group else "Unknown Class",
+        start_time=s.start_time,
+        end_time=s.end_time,
+        late_grace_minutes=s.late_grace_minutes,
+        status=s.status,
+    )
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Deletes a session from the timetable."""
+    res = await db.execute(select(LabSession).where(LabSession.id == session_id))
+    s = res.scalars().first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    await db.delete(s)
+    await db.commit()
+    return {"success": True, "message": "Class session deleted from timetable."}
 

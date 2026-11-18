@@ -333,7 +333,7 @@ def generate_mjpeg_stream(engine):
                 b"Content-Length: " + length + b"\r\n\r\n"
                 + frame_bytes + b"\r\n"
             )
-        time.sleep(0.04)  # ~25 FPS real-time fluid video preview
+        time.sleep(0.06)  # ~16 FPS fluid live preview with low network and CPU overhead
 
 
 @router.get("/stream")
@@ -358,6 +358,36 @@ async def live_camera_mjpeg_stream(request: Request):
         generate_mjpeg_stream(engine),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers=headers,
+    )
+
+
+@router.get("/capture-frame")
+async def capture_raw_camera_frame(request: Request):
+    """
+    Returns the latest high-resolution, unannotated clean frame from the live camera.
+    Used for student registration and live biometric enrollment photo capture.
+    """
+    engine = request.app.state.recognition_engine
+    if not engine:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Recognition engine is not running.",
+        )
+    raw_bytes = engine.get_raw_frame_jpeg()
+    if raw_bytes is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No camera frame available. Please ensure camera is connected.",
+        )
+    return Response(
+        content=raw_bytes,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Content-Disposition": "inline; filename=camera_capture.jpg",
+        },
     )
 
 

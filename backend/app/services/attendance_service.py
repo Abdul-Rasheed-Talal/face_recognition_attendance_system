@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.entities import (
@@ -25,21 +26,74 @@ class AttendanceService:
     """Core attendance business engine executing session rules and persistence."""
 
     @staticmethod
+    async def get_active_session_for_student(
+        db: AsyncSession, student: Student, current_time: Optional[datetime] = None
+    ) -> Optional[LabSession]:
+        """
+        Intelligently resolves the active timetable session for a specific student.
+        Matches scheduled sessions for the student's class section within the allowable entry window
+        (allows entering up to 45 mins before class start, up to class end time).
+        """
+        now = current_time or datetime.now(timezone.utc)
+
+        # 1. Look for a scheduled/active session specifically for the student's class
+        query = (
+            select(LabSession)
+            .where(
+                and_(
+                    LabSession.class_id == student.class_id,
+                    LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
+                    LabSession.start_time - timedelta(minutes=45) <= now,
+                    LabSession.end_time >= now - timedelta(minutes=10),
+                )
+            )
+            .order_by(LabSession.start_time.asc())
+        )
+        res = await db.execute(query)
+        session = res.scalars().first()
+        if session:
+            return session
+
+        # 2. Fallback: check if an explicitly active session is open for this student's class
+        query_fallback = (
+            select(LabSession)
+            .where(
+                and_(
+                    LabSession.class_id == student.class_id,
+                    LabSession.status == "ACTIVE",
+                )
+            )
+        )
+        res_fb = await db.execute(query_fallback)
+        session = res_fb.scalars().first()
+        if session:
+            return session
+
+        # 3. Fallback: check if any generic session is currently marked ACTIVE
+        query_any_active = (
+            select(LabSession)
+            .where(LabSession.status == "ACTIVE")
+            .order_by(LabSession.start_time.desc())
+        )
+        res_any = await db.execute(query_any_active)
+        return res_any.scalars().first()
+
+    @staticmethod
     async def get_active_session_for_lab(
         db: AsyncSession, laboratory_id: Optional[str] = None
     ) -> Optional[LabSession]:
         """
-        Finds currently active session.
+        Finds currently active session across the timetable for dashboard display.
         Matches by status='ACTIVE' or current UTC time within (start_time, end_time).
         """
         now = datetime.now(timezone.utc)
         query = select(LabSession).where(
             and_(
                 LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
-                LabSession.start_time <= now,
+                LabSession.start_time - timedelta(minutes=15) <= now,
                 LabSession.end_time >= now,
             )
-        )
+        ).order_by(LabSession.start_time.asc())
         if laboratory_id:
             query = query.where(LabSession.laboratory_id == laboratory_id)
 
@@ -64,83 +118,107 @@ class AttendanceService:
     ) -> Optional[AttendanceRecord]:
         """
         Processes an incoming candidate event from the CV vision engine:
-        1. Identifies the active lab session.
-        2. Validates student eligibility and enrollment in the class.
-        3. Prevents duplicate attendance.
-        4. Calculates 'PRESENT' vs 'LATE' based on session start time and grace minutes.
+        1. Identifies the student and their enrolled class.
+        2. Intelligently matches against today's class Timetable schedule.
+        3. Prevents duplicate attendance for the session.
+        4. Calculates 'PRESENT' vs 'LATE' based on scheduled start time and grace minutes.
         5. Persists the record atomically and broadcasts via WebSocket.
         """
-        active_session = await AttendanceService.get_active_session_for_lab(db, laboratory_id)
-        if active_session is None:
-            logger.info(f"Attendance candidate for student {event.student_id} received, but no active lab session found.")
-            return None
-
-        # Verify student exists and is active
-        student_res = await db.execute(select(Student).where(Student.id == event.student_id))
+        # 1. Verify student exists and is active, loading class relationship
+        student_res = await db.execute(
+            select(Student)
+            .options(selectinload(Student.class_group))
+            .where(Student.id == event.student_id)
+        )
         student = student_res.scalars().first()
         if student is None or student.status != "ACTIVE":
             logger.warning(f"Student {event.student_id} is inactive or not found.")
             return None
 
-        # Check eligibility: verify student belongs to the class scheduled for this session
-        if student.class_id != active_session.class_id:
-            logger.warning(
-                f"Student {student.full_name} ({student.roll_number}) belongs to class {student.class_id}, "
-                f"not scheduled class {active_session.class_id} for this session."
+        # 2. Find matching timetable session for this student's class
+        crossing_dt = event.crossing_timestamp
+        active_session = await AttendanceService.get_active_session_for_student(
+            db, student, crossing_dt
+        )
+
+        if active_session is None:
+            class_name = student.class_group.name if student.class_group else "Unknown Class"
+            logger.info(
+                f"Student {student.full_name} ({student.roll_number}) entered gate, but no scheduled class found in timetable for {class_name} at this time."
             )
-            # Depending on institutional rules, we could either reject or flag guest attendance
+            await ws_manager.broadcast_json({
+                "type": "ATTENDANCE_NOTICE",
+                "student_id": student.id,
+                "student_name": student.full_name,
+                "roll_number": student.roll_number,
+                "class_name": class_name,
+                "message": f"Detected {student.full_name} ({student.roll_number}), but no class is scheduled right now.",
+                "timestamp": crossing_dt.isoformat(),
+            })
             return None
 
-        # Check existing attendance record (atomic duplicate prevention)
+        # Reload session relationships for complete broadcast data
+        session_res = await db.execute(
+            select(LabSession)
+            .options(selectinload(LabSession.subject), selectinload(LabSession.class_group))
+            .where(LabSession.id == active_session.id)
+        )
+        loaded_session = session_res.scalars().first() or active_session
+
+        # 3. Check existing attendance record (atomic duplicate prevention)
         existing_res = await db.execute(
             select(AttendanceRecord).where(
                 and_(
-                    AttendanceRecord.session_id == active_session.id,
+                    AttendanceRecord.session_id == loaded_session.id,
                     AttendanceRecord.student_id == student.id,
                 )
             )
         )
         existing = existing_res.scalars().first()
         if existing is not None:
-            logger.info(f"Student {student.roll_number} already recorded for session {active_session.id}.")
+            logger.info(f"Student {student.roll_number} already recorded for session {loaded_session.id}. Suppressing duplicate.")
             return existing
 
-        # Determine PRESENT vs LATE status
-        crossing_dt = event.crossing_timestamp
-        late_cutoff = active_session.start_time + timedelta(minutes=active_session.late_grace_minutes)
+        # 4. Determine PRESENT vs LATE status
+        late_cutoff = loaded_session.start_time + timedelta(minutes=loaded_session.late_grace_minutes)
 
         if crossing_dt <= late_cutoff:
             status = "PRESENT"
         else:
             status = "LATE"
 
-        # Create record
+        # 5. Create record
         record = AttendanceRecord(
-            session_id=active_session.id,
+            session_id=loaded_session.id,
             student_id=student.id,
             timestamp=crossing_dt,
             status=status,
             confidence_score=event.confidence,
             verification_method="AUTO_FACE",
-            notes=f"Auto verified by YuNet+SFace on Track #{event.track_id}",
+            notes=f"Auto verified by YuNet+SFace on Gate Track #{event.track_id}",
         )
         db.add(record)
         await db.commit()
         await db.refresh(record)
 
+        subject_title = loaded_session.subject.name if loaded_session.subject else "Class Period"
+        class_label = loaded_session.class_group.name if loaded_session.class_group else (student.class_group.name if student.class_group else "Section")
+
         logger.info(
             f"RECORDED ATTENDANCE: {student.full_name} ({student.roll_number}) "
-            f"marked {status} for Session {active_session.id} (conf: {event.confidence:.3f})"
+            f"marked {status} for {subject_title} ({class_label}) [conf: {event.confidence:.3f}]"
         )
 
-        # Broadcast event to live WebSocket clients
+        # 6. Broadcast event to live WebSocket clients
         await ws_manager.broadcast_json({
             "type": "ATTENDANCE_RECORDED",
             "record_id": record.id,
             "student_id": student.id,
             "student_name": student.full_name,
             "roll_number": student.roll_number,
-            "session_id": active_session.id,
+            "class_name": class_label,
+            "subject_name": subject_title,
+            "session_id": loaded_session.id,
             "status": status,
             "confidence": event.confidence,
             "timestamp": record.timestamp.isoformat(),

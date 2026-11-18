@@ -167,14 +167,52 @@ class ApiService {
     return this.request<void>(`/enrollment/${studentId}`, { method: 'DELETE' });
   }
 
-  // --- Sessions ---
-  async listSessions(status?: string): Promise<LabSession[]> {
-    const qs = status ? `?status=${status}` : '';
+  // --- Sessions & Timetable ---
+  async listSubjects(): Promise<{ id: string; department_id: string; code: string; name: string }[]> {
+    return this.request<{ id: string; department_id: string; code: string; name: string }[]>('/sessions/subjects');
+  }
+
+  async listSessions(status?: string, classId?: string): Promise<LabSession[]> {
+    const query = new URLSearchParams();
+    if (status) query.set('status', status);
+    if (classId) query.set('class_id', classId);
+    const qs = query.toString() ? `?${query.toString()}` : '';
     return this.request<LabSession[]>(`/sessions${qs}`);
   }
 
   async getActiveSession(): Promise<LabSession | null> {
     return this.request<LabSession | null>('/sessions/active');
+  }
+
+  async createSession(data: {
+    subject_id: string;
+    laboratory_id?: string;
+    class_id: string;
+    teacher_id?: string;
+    start_time: string;
+    end_time: string;
+    late_grace_minutes: number;
+  }): Promise<LabSession> {
+    // Fallback laboratory_id if omitted
+    const payload = {
+      ...data,
+      laboratory_id: data.laboratory_id || 'lab-gate-01',
+    };
+    return this.request<LabSession>('/sessions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSession(id: string, data: { status_update?: string; late_grace_minutes?: number }): Promise<LabSession> {
+    const query = new URLSearchParams();
+    if (data.status_update) query.set('status_update', data.status_update);
+    if (data.late_grace_minutes != null) query.set('late_grace_minutes', String(data.late_grace_minutes));
+    return this.request<LabSession>(`/sessions/${id}?${query.toString()}`, { method: 'PUT' });
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    return this.request<void>(`/sessions/${id}`, { method: 'DELETE' });
   }
 
   // --- Attendance ---
@@ -209,6 +247,19 @@ class ApiService {
 
   getCameraSnapshotUrl(): string {
     return `${API_BASE}/camera/snapshot?t=${Date.now()}`;
+  }
+
+  getCameraRawCaptureUrl(): string {
+    return `${API_BASE}/camera/capture-frame?t=${Date.now()}`;
+  }
+
+  async captureCameraSnapshotAsFile(filename = 'gate_capture.jpg'): Promise<File> {
+    const res = await fetch(`${API_BASE}/camera/capture-frame?t=${Date.now()}`);
+    if (!res.ok) {
+      throw new Error('Failed to capture frame from live gate camera. Verify camera is connected.');
+    }
+    const blob = await res.blob();
+    return new File([blob], filename, { type: 'image/jpeg' });
   }
 
   async getCameraStatus() {

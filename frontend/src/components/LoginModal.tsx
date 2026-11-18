@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { X, Lock, Mail, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
 
@@ -19,12 +19,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return; // Prevent double submit
     setError(null);
     setIsLoading(true);
+
     try {
-      await api.login(email, password);
-      const profile = await api.getProfile();
-      onLoginSuccess(profile);
+      const auth = await api.login(email.trim(), password);
+      // Construct user profile directly from login response to avoid immediate race condition
+      const userObj: User = {
+        id: auth.user_id,
+        email: email.trim(),
+        full_name: auth.full_name,
+        role: auth.role as any,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
+      onLoginSuccess(userObj);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please verify credentials.');
@@ -44,59 +54,59 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-6 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 backdrop-blur-xs p-4">
+      <div className="w-full max-w-md bg-white border border-stone-200 rounded-2xl shadow-xl p-6 relative">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white rounded-lg transition"
+          className="absolute top-4 right-4 p-1.5 text-stone-400 hover:text-stone-700 rounded-lg transition"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+          <div className="w-10 h-10 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-800">
             <Lock className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">Staff Authentication</h2>
-            <p className="text-xs text-slate-400">Teacher and Administrator Access</p>
+            <h2 className="text-base font-bold text-stone-900">Staff Authentication</h2>
+            <p className="text-xs text-stone-500">Teacher and Administrator Access</p>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 flex items-start gap-2.5 text-xs text-rose-300">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-700">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Institutional Email</label>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Staff Email</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="teacher@college.edu"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-400"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Password</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-400"
               />
             </div>
           </div>
@@ -104,27 +114,27 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition disabled:opacity-50"
+            className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs transition disabled:opacity-50 cursor-pointer"
           >
             {isLoading ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
 
-        {/* Quick Fill Demo Credentials */}
-        <div className="mt-5 pt-4 border-t border-slate-700/80">
-          <p className="text-[11px] text-slate-400 mb-2">Preset Test Accounts:</p>
+        {/* Quick Fill Preset Accounts */}
+        <div className="mt-5 pt-4 border-t border-stone-100">
+          <p className="text-[11px] text-stone-500 mb-2 font-medium">Preset Test Accounts:</p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={handleFillAdmin}
-              className="flex-1 py-1.5 px-2 bg-slate-700/60 hover:bg-slate-700 text-[11px] font-medium text-slate-200 rounded-lg border border-slate-600 transition text-center"
+              className="flex-1 py-1.5 px-2 bg-stone-100 hover:bg-stone-200 text-[11px] font-medium text-stone-700 rounded-lg border border-stone-200 transition text-center cursor-pointer"
             >
               Fill Admin
             </button>
             <button
               type="button"
               onClick={handleFillTeacher}
-              className="flex-1 py-1.5 px-2 bg-slate-700/60 hover:bg-slate-700 text-[11px] font-medium text-slate-200 rounded-lg border border-slate-600 transition text-center"
+              className="flex-1 py-1.5 px-2 bg-stone-100 hover:bg-stone-200 text-[11px] font-medium text-stone-700 rounded-lg border border-stone-200 transition text-center cursor-pointer"
             >
               Fill Teacher
             </button>
@@ -134,4 +144,3 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     </div>
   );
 };
-
