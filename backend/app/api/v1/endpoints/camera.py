@@ -29,7 +29,7 @@ router = APIRouter(prefix="/camera", tags=["Camera Integration"])
 @router.get("/status")
 async def get_camera_status(request: Request):
     """Retrieves operational telemetry of camera ingestion and recognition engine."""
-    engine = request.app.state.recognition_engine
+    engine = getattr(request.app.state, "recognition_engine", None)
     if not engine:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -239,7 +239,7 @@ async def activate_camera_device(
 @router.post("/reconnect")
 async def reconnect_camera(request: Request):
     """Triggers an immediate camera reconnect cycle."""
-    reader = request.app.state.reader
+    reader = getattr(request.app.state, "reader", None)
     if not reader:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -304,7 +304,7 @@ async def configure_camera(config: CameraConfigUpdate, request: Request):
     """
     Updates the active camera ingestion source dynamically on the running server.
     """
-    reader = request.app.state.reader
+    reader = getattr(request.app.state, "reader", None)
     if not reader:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -342,7 +342,7 @@ async def live_camera_mjpeg_stream(request: Request):
     Live MJPEG stream with detection bounding boxes, tracking trajectories,
     and entry boundary overlays for dashboard monitoring.
     """
-    engine = request.app.state.recognition_engine
+    engine = getattr(request.app.state, "recognition_engine", None)
     if not engine:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -367,7 +367,7 @@ async def capture_raw_camera_frame(request: Request):
     Returns the latest high-resolution, unannotated clean frame from the live camera.
     Used for student registration and live biometric enrollment photo capture.
     """
-    engine = request.app.state.recognition_engine
+    engine = getattr(request.app.state, "recognition_engine", None)
     if not engine:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -394,7 +394,7 @@ async def capture_raw_camera_frame(request: Request):
 @router.get("/snapshot")
 async def get_camera_snapshot(request: Request):
     """Returns the latest single annotated JPEG frame for frame-polling fallbacks."""
-    engine = request.app.state.recognition_engine
+    engine = getattr(request.app.state, "recognition_engine", None)
     if not engine:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

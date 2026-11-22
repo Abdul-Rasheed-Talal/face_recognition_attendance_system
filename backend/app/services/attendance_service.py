@@ -6,10 +6,13 @@ Evaluates student eligibility, session timeframes, late grace thresholds, and du
 from datetime import datetime, timezone, timedelta
 import logging
 from typing import Optional, List, Dict, Any
+from fastapi import HTTPException
 from sqlalchemy import select, and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.config import settings
 from backend.app.models.entities import (
     LabSession,
     Student,
@@ -25,18 +28,49 @@ logger = logging.getLogger(__name__)
 class AttendanceService:
     """Core attendance business engine executing session rules and persistence."""
 
+    # Statuses a manual attendance entry may carry.
+    VALID_MANUAL_STATUSES = {"PRESENT", "LATE", "ABSENT", "EXCUSED", "MANUAL_CORRECTION"}
+
+    @staticmethod
+    async def auto_close_expired_sessions(db: AsyncSession, now: Optional[datetime] = None) -> int:
+        """Marks sessions COMPLETED once they ended more than
+        AUTO_CLOSE_SESSION_HOURS ago. Previously this setting existed in
+        config but was never used, so a stale ACTIVE session stayed open
+        forever and absorbed students from the wrong class."""
+        now = now or datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=settings.AUTO_CLOSE_SESSION_HOURS)
+        res = await db.execute(
+            select(LabSession).where(
+                and_(
+                    LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
+                    LabSession.end_time < cutoff,
+                )
+            )
+        )
+        expired = res.scalars().all()
+        for session in expired:
+            session.status = "COMPLETED"
+        if expired:
+            await db.commit()
+            logger.info(f"Auto-closed {len(expired)} expired session(s).")
+        return len(expired)
+
     @staticmethod
     async def get_active_session_for_student(
         db: AsyncSession, student: Student, current_time: Optional[datetime] = None
     ) -> Optional[LabSession]:
         """
-        Intelligently resolves the active timetable session for a specific student.
-        Matches scheduled sessions for the student's class section within the allowable entry window
-        (allows entering up to 45 mins before class start, up to class end time).
+        Resolves the timetable session for a specific student. Strict:
+        the session must be for the student's own class, status ACTIVE or
+        SCHEDULED, and the current time must be inside the entry window
+        (up to 45 mins before start, up to 10 mins after end). The old
+        fallbacks are gone — one returned any ACTIVE session for the class
+        regardless of time, the other returned any ACTIVE session at all,
+        so a DAE CIT 1st-year student could be marked in a 3rd-year class.
         """
         now = current_time or datetime.now(timezone.utc)
+        await AttendanceService.auto_close_expired_sessions(db, now)
 
-        # 1. Look for a scheduled/active session specifically for the student's class
         query = (
             select(LabSession)
             .where(
@@ -50,33 +84,7 @@ class AttendanceService:
             .order_by(LabSession.start_time.asc())
         )
         res = await db.execute(query)
-        session = res.scalars().first()
-        if session:
-            return session
-
-        # 2. Fallback: check if an explicitly active session is open for this student's class
-        query_fallback = (
-            select(LabSession)
-            .where(
-                and_(
-                    LabSession.class_id == student.class_id,
-                    LabSession.status == "ACTIVE",
-                )
-            )
-        )
-        res_fb = await db.execute(query_fallback)
-        session = res_fb.scalars().first()
-        if session:
-            return session
-
-        # 3. Fallback: check if any generic session is currently marked ACTIVE
-        query_any_active = (
-            select(LabSession)
-            .where(LabSession.status == "ACTIVE")
-            .order_by(LabSession.start_time.desc())
-        )
-        res_any = await db.execute(query_any_active)
-        return res_any.scalars().first()
+        return res.scalars().first()
 
     @staticmethod
     async def get_active_session_for_lab(
@@ -87,6 +95,9 @@ class AttendanceService:
         Matches by status='ACTIVE' or current UTC time within (start_time, end_time).
         """
         now = datetime.now(timezone.utc)
+        # Close sessions that ended hours ago so the ACTIVE fallback below
+        # cannot resurrect a stale one.
+        await AttendanceService.auto_close_expired_sessions(db, now)
         query = select(LabSession).where(
             and_(
                 LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
@@ -187,7 +198,12 @@ class AttendanceService:
         else:
             status = "LATE"
 
-        # 5. Create record
+        # 5. Create record. The select-then-insert duplicate check above
+        # races when two candidate events for the same student arrive at
+        # once (group arrival): both pass the check and one hits the
+        # uq_session_student_attendance constraint. That used to raise an
+        # unhandled IntegrityError in the background task; now it is
+        # treated as already-recorded.
         record = AttendanceRecord(
             session_id=loaded_session.id,
             student_id=student.id,
@@ -198,7 +214,20 @@ class AttendanceService:
             notes=f"Auto verified by YuNet+SFace on Gate Track #{event.track_id}",
         )
         db.add(record)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            logger.info(f"Duplicate attendance insert for {student.roll_number} in session {loaded_session.id} — returning the existing record.")
+            existing_res = await db.execute(
+                select(AttendanceRecord).where(
+                    and_(
+                        AttendanceRecord.session_id == loaded_session.id,
+                        AttendanceRecord.student_id == student.id,
+                    )
+                )
+            )
+            return existing_res.scalars().first()
         await db.refresh(record)
 
         subject_title = loaded_session.subject.name if loaded_session.subject else "Class Period"
@@ -235,7 +264,21 @@ class AttendanceService:
         teacher_id: str,
         notes: Optional[str] = None,
     ) -> AttendanceRecord:
-        """Allows a teacher to manually record or override an attendance status."""
+        """Allows a teacher to manually record or override an attendance status.
+        Validates everything the old version did not: the session and the
+        student must exist, and the status must be a known enum value —
+        previously any string (and any fake student id) returned 200."""
+        if status not in AttendanceService.VALID_MANUAL_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{status}'. Use one of: {', '.join(sorted(AttendanceService.VALID_MANUAL_STATUSES))}.",
+            )
+        session = (await db.execute(select(LabSession).where(LabSession.id == session_id))).scalars().first()
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' does not exist.")
+        student = (await db.execute(select(Student).where(Student.id == student_id))).scalars().first()
+        if not student:
+            raise HTTPException(status_code=404, detail=f"Student '{student_id}' does not exist.")
         existing_res = await db.execute(
             select(AttendanceRecord).where(
                 and_(

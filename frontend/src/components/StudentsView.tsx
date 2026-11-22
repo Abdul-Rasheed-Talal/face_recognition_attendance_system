@@ -163,9 +163,19 @@ export const StudentsView: React.FC<StudentsViewProps> = ({ currentUser, onOpenL
       return;
     }
 
+    // No silent fallbacks: an unselected department/class used to send
+    // 'CS' / 'BS CS 2023', and the backend used to accept them into the
+    // wrong class. The backend now 400s on unknown values; the form
+    // requires an explicit choice too.
+    if (!selectedDeptId || !selectedClassId) {
+      setFormError('Select a department and a class section first.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const deptId = selectedDeptId || (departments[0]?.id || 'CS');
-      const classId = selectedClassId || (classes[0]?.id || 'BS CS 2023');
+      const deptId = selectedDeptId;
+      const classId = selectedClassId;
 
       const created = await api.createStudent({
         roll_number: newRoll.trim(),
@@ -243,9 +253,12 @@ export const StudentsView: React.FC<StudentsViewProps> = ({ currentUser, onOpenL
     setEnrollMsg(null);
     try {
       const res = await api.enrollFace(selectedStudentForEnroll.id, faceFile);
+      // quality_score is normalised 0–1 on the backend; show it as a
+      // percentage, clamped for templates enrolled before the fix.
+      const qualityPct = Math.round(Math.min(1, Math.max(0, res.quality_score)) * 100);
       setEnrollMsg({
         type: 'success',
-        text: `Face template registered successfully! (Quality score: ${res.quality_score.toFixed(1)})`,
+        text: `Face template registered successfully! (Quality: ${qualityPct}%)`,
       });
       fetchStudents();
       setTimeout(() => {

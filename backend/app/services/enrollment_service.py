@@ -182,12 +182,15 @@ class FaceEnrollmentService:
         for prev in prev_templates_res.scalars().all():
             prev.is_active = False
 
-        # Store new template
+        # Store new template. quality_score is normalised to 0-1: the raw
+        # Laplacian variance is unbounded (a sharp photo scores ~120+),
+        # but the UI displayed it as if it were a 0-1 score. blur 60
+        # (the acceptance threshold) maps to 0.60, 100+ maps to 1.00.
         template = FaceTemplate(
             student_id=student.id,
             embedding_bytes=embedding.tobytes(),
             model_name="sface_2021dec",
-            quality_score=float(detected.blur_score),
+            quality_score=round(min(1.0, float(detected.blur_score) / 100.0), 3),
             is_active=True,
         )
         db.add(template)

@@ -5,6 +5,7 @@ Supports SQLite (aiosqlite) for development and PostgreSQL (asyncpg) for product
 
 import os
 from typing import AsyncGenerator
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -22,6 +23,21 @@ engine = create_async_engine(
     # SQLite-specific optimization
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
+
+# SQLite disables foreign-key enforcement by default, so the FK cascades
+# declared in entities.py were silently ignored (orphan sessions with a
+# laboratory_id that matches no row, dangling student references, ...).
+# Turn it on for every connection.
+if "sqlite" in settings.DATABASE_URL:
+    # NOTE: the listener must be registered on the *sync* engine —
+    # registering it on the AsyncEngine raises
+    # "NotImplementedError: asynchronous events are not implemented".
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 
 # Async session factory
 AsyncSessionLocal = async_sessionmaker(

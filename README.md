@@ -148,6 +148,13 @@ pip install "sqlalchemy[asyncio]" greenlet email-validator
 python benchmarks/cpu_benchmark.py
 ```
 
+> **First run:** the models are not in the repository (they are gitignored).
+> `python run.py` downloads them automatically the first time it starts
+> (via `download_models.py`); if the download fails it stops with a clear
+> error telling you to run `python download_models.py` manually. The
+> backend will not start with a half-loaded model set — it fails fast
+> naming the missing model instead of crashing later on the first frame.
+
 ### Step 3: Configure Environment Variables
 Copy `.env.example` to `.env`:
 ```bash
@@ -166,7 +173,7 @@ DATABASE_URL=sqlite+aiosqlite:///./data/attendance.db
 ```bash
 python -m pytest tests/ -v
 ```
-*(All 12 unit and integration tests validate CV mathematics, ONNX inference, and REST APIs).*
+*(15 tests: 12 pass, 3 skipped when the ONNX models are not downloaded yet — they validate CV mathematics, ONNX inference, and REST APIs, including the new FK-validation, session-validation, and corrections-review tests.)*
 
 ---
 
@@ -203,6 +210,62 @@ The application automatically seeds initial accounts on first startup:
 | :--- | :--- | :--- | :--- |
 | **Administrator** | `admin@college.edu` | `AdminPass123!` | Full System, Biometric Enrollment, Settings |
 | **Teacher** | `prof.smith@college.edu` | `TeacherPass123!` | Session Management, Manual Attendance, Overrides |
+
+> **Change these before any real deployment.** The seeded passwords are
+> public (they are in this README) and are only safe for a lab machine
+> that is not reachable from outside the campus LAN.
+
+---
+
+## 7a. Liveness & spoofing — what this system does and does not do
+
+**There is no photo-spoof detection in this system.** A printed photo or
+a phone screen held up to the gate camera can be recognised as the
+student in the photo. Do not describe or sell the system as having
+anti-spoofing.
+
+What *is* in place as a mitigation, with no extra hardware:
+
+- **Line-crossing is ON by default** (`CV_REQUIRE_LINE_CROSSING=True`):
+  a face must cross the gate line while moving toward the lab before it
+  is marked present, so a static photo waved at the camera from a
+  distance does not count.
+- **3-of-5 confirmation** (`CV_CONFIRMATION_FRAMES=3`, `CV_CONFIRMATION_WINDOW=5`):
+  a face must be matched in 3 of 5 consecutive frames.
+- **Recognition thresholds** (aligned with `.env.example`):
+  detection confidence `0.85`, minimum face width `60 px`, blur
+  threshold `60.0` (Laplacian variance), processing at `3 FPS`.
+  Enrollment quality is stored normalised to 0–1 (raw Laplacian variance
+  divided by 100, capped at 1.0).
+
+For real anti-spoofing you would need depth/IR hardware or a liveness
+model — that is out of scope for this project.
+
+---
+
+## 7b. Known limitations
+
+- **LAN endpoints are unauthenticated by design** (owner decision):
+  camera status/stream/snapshot, the student roster, statistics and the
+  attendance WebSocket are open on the campus LAN so anyone on the
+  network can watch the gate feed. Do not expose port 8000 outside the
+  LAN. Login is still required for student management, enrollment,
+  manual attendance, and corrections review.
+- **Sessions are class + lab + time-window matched.** A student is only
+  marked for a session of their own class, at the lab gate, inside the
+  session window. Sessions auto-close `AUTO_CLOSE_SESSION_HOURS` after
+  they end; expired sessions no longer match anyone.
+- **"Today" in statistics is Asia/Karachi**, and "absent" counts only
+  students who had a session today — not the whole roster.
+- **Seed data is DAE CIT 1st/2nd/3rd Year** (CIT department, DAE CIT
+  Laboratory, Lab Gate Camera). The old BS CS 2023 seed was a dummy and
+  has been removed.
+- **Student portal page is not mounted in the app** (`StudentPortalView`
+  exists but is not routed); students file corrections through a teacher,
+  who submits them with the student's roll number.
+- **Registration is done in the lab, one by one**, with the gate camera
+  using the enrollment option. There is intentionally no
+  self-registration, no QR/JSON import, and no pending-approval queue.
 
 ---
 

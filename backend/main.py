@@ -78,31 +78,39 @@ async def seed_initial_fixtures():
             db.add_all([admin, teacher])
             await db.flush()
 
-            # Department & Class
-            dept = Department(code="CS", name="Computer Science & Information Technology")
+            # Department & real classes (DAE CIT — the BS CS 2023 class that
+            # used to be seeded here was a dummy and is gone).
+            dept = Department(code="CIT", name="Computer Information Technology (DAE CIT)")
             db.add(dept)
             await db.flush()
 
-            class_grp = ClassGroup(
-                department_id=dept.id,
-                name="BS CS 2023",
-                year="3rd Year",
-                semester="6th Semester",
-                section="A",
-            )
-            db.add(class_grp)
+            class_groups = []
+            for year, semester in (
+                ("1st Year", "1st Semester"),
+                ("2nd Year", "3rd Semester"),
+                ("3rd Year", "5th Semester"),
+            ):
+                class_grp = ClassGroup(
+                    department_id=dept.id,
+                    name=f"DAE CIT {year}",
+                    year=year,
+                    semester=semester,
+                    section="A",
+                )
+                db.add(class_grp)
+                class_groups.append(class_grp)
             await db.flush()
 
-            # Subject & Lab
+            # Subject & Lab (the lab whose gate the camera sits above)
             subject = Subject(
                 department_id=dept.id,
-                code="CS-301",
-                name="Database Management Systems Lab",
+                code="CIT-LAB",
+                name="Computer Applications Lab",
             )
             lab = Laboratory(
-                name="Computer Laboratory 01",
-                room_number="LAB-101",
-                building="Science Complex Block B",
+                name="DAE CIT Laboratory",
+                room_number="LAB-CIT-01",
+                building="Main Block",
                 capacity=40,
             )
             db.add_all([subject, lab])
@@ -111,23 +119,27 @@ async def seed_initial_fixtures():
             # Camera device
             cam = CameraDevice(
                 laboratory_id=lab.id,
-                name="Entrance Doorway IP Camera",
+                name="Lab Gate Camera",
                 rtsp_url=str(settings.effective_camera_source),
                 status="OFFLINE",
             )
             db.add(cam)
 
-            # Active Lab Session for immediate testing (spanning now +/- 2 hours)
+            # One SCHEDULED session for DAE CIT 1st Year so the timetable
+            # is not empty on a fresh install. It is SCHEDULED, not ACTIVE:
+            # the old seed created an ACTIVE session spanning now +/- 2 h on
+            # every fresh DB, and the session matcher would happily absorb
+            # students from the wrong class into it.
             now = datetime.now(timezone.utc)
             session = LabSession(
                 subject_id=subject.id,
                 laboratory_id=lab.id,
                 teacher_id=teacher.id,
-                class_id=class_grp.id,
+                class_id=class_groups[0].id,
                 start_time=now - timedelta(minutes=10),
                 end_time=now + timedelta(hours=2),
                 late_grace_minutes=15,
-                status="ACTIVE",
+                status="SCHEDULED",
             )
             db.add(session)
 
@@ -144,7 +156,20 @@ async def lifespan(app: FastAPI):
     await init_db()
     await seed_initial_fixtures()
 
-    # 2. Initialize CV components
+    # 2. Fail fast with an actionable message if the ONNX models are
+    # missing (they are gitignored, so a fresh clone has none). The
+    # launcher run.py downloads them automatically; running uvicorn
+    # directly used to die later with a bare FileNotFoundError.
+    for _model_path in (settings.YUNET_MODEL_PATH, settings.SFACE_MODEL_PATH):
+        if not os.path.exists(_model_path):
+            raise RuntimeError(
+                f"ONNX model not found: {_model_path}. "
+                "Run `python download_models.py` once (needs internet), "
+                "or start the app with `python run.py`, which downloads "
+                "missing models automatically."
+            )
+
+    # 3. Initialize CV components
     detector = YuNetFaceDetector(
         model_path=settings.YUNET_MODEL_PATH,
         confidence_threshold=settings.CV_DETECTION_CONFIDENCE_THRESHOLD,
@@ -170,7 +195,7 @@ async def lifespan(app: FastAPI):
         require_line_crossing=settings.CV_REQUIRE_LINE_CROSSING,
     )
 
-    # 3. Initialize video reader
+    # 4. Initialize video reader
     cam_source = settings.effective_camera_source
     async with AsyncSessionLocal() as db_session:
         active_device = (await db_session.execute(
@@ -192,7 +217,7 @@ async def lifespan(app: FastAPI):
         rtsp_transport=settings.CAMERA_RTSP_TRANSPORT,
     )
 
-    # 4. Asynchronous event dispatcher callback
+    # 5. Asynchronous event dispatcher callback
     main_loop = asyncio.get_running_loop()
 
     def on_attendance_candidate(event: AttendanceCandidateEvent):
@@ -202,7 +227,7 @@ async def lifespan(app: FastAPI):
                 await AttendanceService.process_candidate_event(db, event)
         asyncio.run_coroutine_threadsafe(_persist(), main_loop)
 
-    # 5. Build recognition engine
+    # 6. Build recognition engine
     engine_cv = VisionRecognitionEngine(
         reader=reader,
         detector=detector,
@@ -213,10 +238,12 @@ async def lifespan(app: FastAPI):
         confirmation_engine=confirmation_engine,
         processing_fps=settings.CV_PROCESSING_FPS,
         processing_scale=(settings.CV_PROCESSING_WIDTH, settings.CV_PROCESSING_HEIGHT),
+        require_line_crossing=settings.CV_REQUIRE_LINE_CROSSING,
+        recognition_every_n_frames=settings.CV_RECOGNITION_EVERY_N_FRAMES,
         on_attendance_event=on_attendance_candidate,
     )
 
-    # 6. Initialize enrollment service with dedicated CV models to eliminate any thread contention with the video loop
+    # 7. Initialize enrollment service with dedicated CV models to eliminate any thread contention with the video loop
     enroll_detector = YuNetFaceDetector(
         model_path=settings.YUNET_MODEL_PATH,
         confidence_threshold=0.50,

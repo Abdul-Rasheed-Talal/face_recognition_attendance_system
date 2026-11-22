@@ -167,6 +167,45 @@ class ApiService {
     return this.request<void>(`/enrollment/${studentId}`, { method: 'DELETE' });
   }
 
+  // --- Academics (create) ---
+  async createDepartment(data: { code: string; name: string }): Promise<DepartmentItem> {
+    return this.request<DepartmentItem>('/students/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createClass(data: {
+    department_id: string;
+    name: string;
+    year: string;
+    semester: string;
+    section: string;
+  }): Promise<ClassItem> {
+    return this.request<ClassItem>('/students/classes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createSubject(data: { department_id: string; code: string; name: string }) {
+    return this.request('/sessions/subjects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listLaboratories(): Promise<{ id: string; name: string; room_number: string; building: string; capacity: number }[]> {
+    return this.request<{ id: string; name: string; room_number: string; building: string; capacity: number }[]>('/sessions/laboratories');
+  }
+
+  async createLaboratory(data: { name: string; room_number: string; building: string; capacity?: number }) {
+    return this.request('/sessions/laboratories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // --- Sessions & Timetable ---
   async listSubjects(): Promise<{ id: string; department_id: string; code: string; name: string }[]> {
     return this.request<{ id: string; department_id: string; code: string; name: string }[]>('/sessions/subjects');
@@ -186,21 +225,22 @@ class ApiService {
 
   async createSession(data: {
     subject_id: string;
-    laboratory_id?: string;
+    laboratory_id: string;
     class_id: string;
     teacher_id?: string;
     start_time: string;
     end_time: string;
     late_grace_minutes: number;
   }): Promise<LabSession> {
-    // Fallback laboratory_id if omitted
-    const payload = {
-      ...data,
-      laboratory_id: data.laboratory_id || 'lab-gate-01',
-    };
+    // No fake laboratory_id: the old code substituted 'lab-gate-01',
+    // which matches no row in the database, so sessions were created
+    // pointing at a laboratory that does not exist.
+    if (!data.laboratory_id) {
+      throw new Error('Select a laboratory for this session first.');
+    }
     return this.request<LabSession>('/sessions', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
   }
 
@@ -350,11 +390,29 @@ class ApiService {
     return this.request<DashboardStatistics>('/reports/statistics');
   }
 
-  getExportCsvUrl(sessionId?: string): string {
-    return `${API_BASE}/reports/export/csv${sessionId ? `?session_id=${sessionId}` : ''}`;
+  // CSV export: the old plain <a href> sent no Bearer token, so the
+  // export 401'd for everyone. Fetch with the token and download a blob.
+  async downloadCsv(sessionId?: string): Promise<void> {
+    const url = `${API_BASE}/reports/export/csv${sessionId ? `?session_id=${sessionId}` : ''}`;
+    const res = await fetch(url, {
+      headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `Export failed (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = sessionId ? `attendance_${sessionId}.csv` : 'attendance_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
   }
 
-  async submitCorrection(data: { session_id: string; reason: string }): Promise<CorrectionRequest> {
+  async submitCorrection(data: { session_id: string; reason: string; student_id?: string }): Promise<CorrectionRequest> {
     return this.request<CorrectionRequest>('/reports/corrections', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -363,6 +421,13 @@ class ApiService {
 
   async listCorrections(): Promise<CorrectionRequest[]> {
     return this.request<CorrectionRequest[]>('/reports/corrections');
+  }
+
+  async reviewCorrection(id: string, decision: 'APPROVED' | 'REJECTED', note?: string): Promise<CorrectionRequest> {
+    return this.request<CorrectionRequest>(`/reports/corrections/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, note }),
+    });
   }
 }
 
