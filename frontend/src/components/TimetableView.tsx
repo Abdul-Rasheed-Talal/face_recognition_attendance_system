@@ -25,6 +25,7 @@ export const TimetableView: React.FC = () => {
   const [sessions, setSessions] = useState<LabSession[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
+  const [laboratories, setLaboratories] = useState<{ id: string; name: string; room_number: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modal State
@@ -35,6 +36,7 @@ export const TimetableView: React.FC = () => {
   // Form Fields
   const [classId, setClassId] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const [laboratoryId, setLaboratoryId] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:30');
   const [graceMinutes, setGraceMinutes] = useState(15);
@@ -42,16 +44,19 @@ export const TimetableView: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [sessList, classList, subjList] = await Promise.all([
+      const [sessList, classList, subjList, labList] = await Promise.all([
         api.listSessions().catch(() => []),
         api.listClasses().catch(() => []),
         api.listSubjects().catch(() => []),
+        api.listLaboratories().catch(() => []),
       ]);
       setSessions(sessList);
       setClasses(classList);
       setSubjects(subjList);
+      setLaboratories(labList);
       if (classList.length > 0 && !classId) setClassId(classList[0].id);
       if (subjList.length > 0 && !subjectId) setSubjectId(subjList[0].id);
+      if (labList.length > 0 && !laboratoryId) setLaboratoryId(labList[0].id);
     } catch (e) {
       console.error('Error loading timetable data:', e);
     } finally {
@@ -67,6 +72,10 @@ export const TimetableView: React.FC = () => {
     e.preventDefault();
     if (!classId || !subjectId) {
       setFormError('Please select both a class and a subject.');
+      return;
+    }
+    if (!laboratoryId) {
+      setFormError('No laboratory is configured. Create one first (the DAE CIT Laboratory is seeded on a fresh install).');
       return;
     }
 
@@ -93,6 +102,7 @@ export const TimetableView: React.FC = () => {
 
       await api.createSession({
         subject_id: subjectId,
+        laboratory_id: laboratoryId,
         class_id: classId,
         start_time: startDt.toISOString(),
         end_time: endDt.toISOString(),
@@ -312,6 +322,23 @@ export const TimetableView: React.FC = () => {
                   ))}
                 </select>
                 <p className="text-[11px] text-stone-500 mt-1">Students enrolled in this class will be marked for this slot.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Laboratory</label>
+                <select
+                  value={laboratoryId}
+                  onChange={(e) => setLaboratoryId(e.target.value)}
+                  required
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-xs text-stone-900 focus:outline-none focus:border-stone-400"
+                >
+                  {laboratories.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({l.room_number})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-stone-500 mt-1">The gate camera for this lab is what marks attendance.</p>
               </div>
 
               <div>

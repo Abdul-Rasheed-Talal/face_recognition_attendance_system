@@ -43,23 +43,42 @@ class Settings(BaseSettings):
     # Models & CV
     YUNET_MODEL_PATH: str = "./models/face_detection_yunet_2023mar.onnx"
     SFACE_MODEL_PATH: str = "./models/face_recognition_sface_2021dec.onnx"
-    CV_DETECTION_CONFIDENCE_THRESHOLD: float = 0.50  # 0.50 enables reliable detection of far persons
+    # CV thresholds — aligned with README §3 and .env.example (the benchmarked
+    # values: 0.85 confidence, 60 px min face, Laplacian blur >= 60, 3-of-5
+    # confirmation). The gate camera is mounted above the lab doorway, so
+    # faces are close-range; the old loose defaults (0.50 / 14 px / 0.5)
+    # effectively disabled the quality filter and let blurry, distant faces
+    # through. Override via .env if the gate is ever moved further back.
+    CV_DETECTION_CONFIDENCE_THRESHOLD: float = 0.85
     CV_NMS_THRESHOLD: float = 0.30
-    CV_MIN_FACE_WIDTH: int = 14                      # 14px threshold captures faces at 3.5 - 5 meters
-    CV_LAPLACIAN_BLUR_THRESHOLD: float = 0.5         # Prevents false blur rejection on smooth portrait faces
+    CV_MIN_FACE_WIDTH: int = 60
+    CV_LAPLACIAN_BLUR_THRESHOLD: float = 60.0
     CV_COSINE_SIMILARITY_THRESHOLD: float = 0.363
     CV_AMBIGUITY_MARGIN: float = 0.080
-    CV_MULTI_FRAME_CONFIRMATION_COUNT: int = 2
-    CV_MULTI_FRAME_WINDOW_SIZE: int = 4
+    CV_MULTI_FRAME_CONFIRMATION_COUNT: int = 3
+    CV_MULTI_FRAME_WINDOW_SIZE: int = 5
     CV_TRACK_COOLDOWN_SECONDS: float = 1800.0
-    CV_REQUIRE_LINE_CROSSING: bool = False  # False: continuous gate recognition; True: requires doorway line-crossing
+    # True: a student must walk across the virtual gate line (with a real
+    # trajectory) before attendance can be recorded. This is the only
+    # liveness mitigation available without new hardware — it stops a
+    # printed photo / phone screen held up at the gate from marking
+    # attendance. It is NOT photo-spoof detection; see README §9.
+    CV_REQUIRE_LINE_CROSSING: bool = True
+    # SFace runs at most once per track every N processed frames. At 3 FPS
+    # processing that is ~1 recognition/second per face — plenty for a
+    # doorway walk-through, and it keeps a 5-person group arrival from
+    # making the pipeline fall behind.
+    CV_RECOGNITION_EVERY_N_FRAMES: int = 3
 
     # Camera & Doorway Gate
     CAMERA_SOURCE: Union[str, int] = "0"
     CAMERA_SOURCE_TYPE: str = "webcam"  # webcam, rtsp, hikvision, or file
     CAMERA_RTSP_TRANSPORT: str = "tcp"
     CAMERA_FPS: int = 15
-    CV_PROCESSING_FPS: float = 10.0
+    # Matches README §2: the pipeline is benchmarked at ~3.3 FPS (640x360,
+    # 1 face = 32.6 ms, ~10% of one core). 10 FPS was never measured and
+    # only burns CPU on the edge box.
+    CV_PROCESSING_FPS: float = 3.0
     CV_PROCESSING_WIDTH: int = 640
     CV_PROCESSING_HEIGHT: int = 360
     CAMERA_WIDTH: int = 1280

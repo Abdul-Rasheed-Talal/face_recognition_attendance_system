@@ -10,7 +10,7 @@ import {
   X,
   UserCheck,
 } from 'lucide-react';
-import { AttendanceRecord, LabSession, Student } from '../types';
+import { AttendanceRecord, LabSession, Student, CorrectionRequest } from '../types';
 import { api } from '../services/api';
 
 export const AttendanceView: React.FC = () => {
@@ -19,6 +19,9 @@ export const AttendanceView: React.FC = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Manual Override Modal
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
@@ -42,6 +45,9 @@ export const AttendanceView: React.FC = () => {
 
       const stList = await api.listStudents();
       setStudents(stList);
+
+      const corrList = await api.listCorrections().catch(() => []);
+      setCorrections(corrList);
 
       if (defaultSessId) {
         const attList = await api.listAttendance({ session_id: defaultSessId });
@@ -111,7 +117,29 @@ export const AttendanceView: React.FC = () => {
     }
   };
 
-  const exportUrl = api.getExportCsvUrl(selectedSessionId);
+  const handleExportCsv = async () => {
+    setExportError(null);
+    setIsExporting(true);
+    try {
+      await api.downloadCsv(selectedSessionId || undefined);
+    } catch (e: any) {
+      setExportError(e.message || 'Export failed.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleReviewCorrection = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
+    try {
+      await api.reviewCorrection(id, decision);
+      const corrList = await api.listCorrections().catch(() => []);
+      setCorrections(corrList);
+    } catch (e) {
+      console.error('Failed to review correction:', e);
+    }
+  };
+
+  const pendingCorrections = corrections.filter((c) => c.status === 'PENDING');
 
   // Grouping counts
   const presentCount = records.filter((r) => r.status === 'PRESENT').length;
@@ -146,17 +174,61 @@ export const AttendanceView: React.FC = () => {
             <UserCheck className="w-3.5 h-3.5" />
             <span>Manual Check-In</span>
           </button>
-          <a
-            href={exportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
+          <button
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export CSV / Excel</span>
-          </a>
+            <span>{isExporting ? 'Exporting...' : 'Export CSV / Excel'}</span>
+          </button>
         </div>
       </div>
+
+      {exportError && (
+        <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+          Export failed: {exportError}
+        </div>
+      )}
+
+      {/* Correction requests awaiting review */}
+      {pendingCorrections.length > 0 && (
+        <div className="bg-white border border-amber-200 rounded-2xl shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-amber-100 bg-amber-50/60">
+            <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+              Correction Requests — {pendingCorrections.length} pending
+            </h3>
+            <p className="text-[11px] text-amber-700 mt-0.5">
+              Students disputed their attendance. Approve or reject each one; the decision is recorded with your name and time.
+            </p>
+          </div>
+          <div className="divide-y divide-stone-100">
+            {pendingCorrections.map((c) => (
+              <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs">
+                  <span className="font-bold text-stone-900">{c.student_name}</span>
+                  <span className="text-stone-500 font-mono"> ({c.roll_number})</span>
+                  <p className="text-stone-600 mt-1">{c.reason}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleReviewCorrection(c.id, 'APPROVED')}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleReviewCorrection(c.id, 'REJECTED')}
+                    className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 rounded-lg text-xs font-semibold border border-stone-200 transition cursor-pointer"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-3 gap-4">

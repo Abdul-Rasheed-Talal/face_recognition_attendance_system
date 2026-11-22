@@ -44,10 +44,11 @@ class VisionRecognitionEngine:
         tracker: Optional[FaceTracker] = None,
         line_gate: Optional[DirectionalLineGate] = None,
         confirmation_engine: Optional[MultiFrameConfirmationEngine] = None,
-        processing_fps: float = 10.0,
+        processing_fps: float = 3.0,
         processing_scale: Tuple[int, int] = (640, 360),
         camera_id: str = "CAM_GATE_01",
-        require_line_crossing: bool = False,
+        require_line_crossing: bool = True,
+        recognition_every_n_frames: int = 3,
         on_attendance_event: Optional[Callable[[AttendanceCandidateEvent], None]] = None,
     ):
         self.reader = reader
@@ -62,7 +63,10 @@ class VisionRecognitionEngine:
         self.processing_scale = processing_scale
         self.camera_id = camera_id
         self.require_line_crossing = require_line_crossing
+        self.recognition_every_n_frames = max(1, recognition_every_n_frames)
         self.on_attendance_event = on_attendance_event
+        # track_id -> frames seen, for per-track SFace throttling
+        self._recognition_frame_counters: Dict[int, int] = {}
 
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -186,7 +190,15 @@ class VisionRecognitionEngine:
                         matched_det = det
                         break
 
-                if matched_det is not None:
+                # 4b2. Throttle SFace: run recognition at most once per
+                # track every N frames (~1/sec at 3 FPS). A group arrival
+                # used to run SFace (~20 ms) on every face every frame and
+                # the loop fell behind; the tracker's bbox is still updated
+                # every frame, only the embedding is sampled.
+                frame_no = self._recognition_frame_counters.get(track.track_id, 0) + 1
+                self._recognition_frame_counters[track.track_id] = frame_no
+
+                if matched_det is not None and frame_no % self.recognition_every_n_frames == 0:
                     try:
                         # 4c. High-resolution face alignment:
                         # Scale landmarks back to original camera resolution so SFace extracts sharp features for far persons
@@ -228,9 +240,17 @@ class VisionRecognitionEngine:
                     except Exception as det_err:
                         logger.debug(f"Feature extraction error on track #{track.track_id}: {det_err}")
 
+                elif track.track_id in self._latest_matches:
+                    # Recognition throttled this frame — reuse the last
+                    # match so the dashboard label does not flicker.
+                    current_frame_matches[track.track_id] = self._latest_matches[track.track_id]
+
             # 5. Prune stale observations
             active_ids = [t.track_id for t in tracked_faces]
             self.confirmation_engine.prune_stale_tracks(active_ids)
+            for _tid in list(self._recognition_frame_counters):
+                if _tid not in active_ids:
+                    del self._recognition_frame_counters[_tid]
 
             # 6. Render visual annotations for live dashboard monitoring
             annotated = self._render_annotations(
