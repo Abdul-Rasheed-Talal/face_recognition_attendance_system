@@ -179,6 +179,11 @@ async def update_attendance_status(
     teacher: User = Depends(require_teacher_or_admin),
 ):
     """Updates status of an existing attendance record (e.g. EXCUSED or CORRECTION)."""
+    if update_in.status not in AttendanceService.VALID_MANUAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{update_in.status}'. Use one of: {', '.join(sorted(AttendanceService.VALID_MANUAL_STATUSES))}.",
+        )
     res = await db.execute(
         select(AttendanceRecord)
         .options(selectinload(AttendanceRecord.student))

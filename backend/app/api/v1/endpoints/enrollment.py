@@ -16,6 +16,11 @@ from backend.app.api.v1.deps import require_teacher_or_admin
 
 logger = logging.getLogger(__name__)
 
+# A single enrollment photo: 5 MB max, image only. Previously the
+# endpoint read an unbounded upload into memory — a large file could
+# OOM the edge box.
+MAX_ENROLLMENT_IMAGE_BYTES = 5 * 1024 * 1024
+
 router = APIRouter(prefix="/enrollment", tags=["Biometric Enrollment"])
 
 
@@ -70,9 +75,13 @@ async def enroll_face(
             detail="Face enrollment service is not initialized.",
         )
 
-    image_bytes = await image.read()
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Expected an image file, got '{image.content_type}'.")
+    image_bytes = await image.read(MAX_ENROLLMENT_IMAGE_BYTES + 1)
     if len(image_bytes) == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty image payload.")
+    if len(image_bytes) > MAX_ENROLLMENT_IMAGE_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image is too large (max 5 MB). Use a smaller photo.")
 
     try:
         success, message, template = await enrollment_service.enroll_from_image_bytes(

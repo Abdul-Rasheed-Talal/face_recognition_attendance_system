@@ -242,6 +242,15 @@ class DashboardStatisticsOut(BaseModel):
 class CorrectionRequestCreate(BaseModel):
     session_id: str
     reason: str
+    # Optional: a teacher submitting on a student's behalf (students have
+    # no User accounts, so the email-mapping below cannot find them).
+    student_id: Optional[str] = None
+
+
+class CorrectionReview(BaseModel):
+    """Teacher decision on a pending correction request."""
+    decision: str  # APPROVED or REJECTED
+    note: Optional[str] = None
 
 
 class CorrectionRequestOut(BaseModel):

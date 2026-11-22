@@ -4,8 +4,6 @@ Supports student directory listing, department & class lookups, and student regi
 """
 
 from typing import List, Optional
-import io
-import csv
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Request
 from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +24,9 @@ from backend.app.schemas.domain import (
     StudentCreate,
     StudentUpdate,
     StudentOut,
+    DepartmentCreate,
     DepartmentOut,
+    ClassCreate,
     ClassOut,
 )
 from backend.app.api.v1.deps import (
@@ -56,6 +56,46 @@ async def list_classes(
         query = query.where(ClassGroup.department_id == department_id)
     res = await db.execute(query)
     return res.scalars().all()
+
+
+@router.post("/departments", response_model=DepartmentOut, status_code=status.HTTP_201_CREATED)
+async def create_department(
+    dept_in: DepartmentCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Creates a department. Previously there was no way to add one except by editing seed code."""
+    existing = (await db.execute(select(Department).where(Department.code == dept_in.code.strip()))).scalars().first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Department code '{dept_in.code}' already exists.")
+    dept = Department(code=dept_in.code.strip(), name=dept_in.name.strip())
+    db.add(dept)
+    await db.commit()
+    await db.refresh(dept)
+    return dept
+
+
+@router.post("/classes", response_model=ClassOut, status_code=status.HTTP_201_CREATED)
+async def create_class(
+    class_in: ClassCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Creates a class section (e.g. DAE CIT 1st Year). The department must exist — no silent fallback."""
+    dept = (await db.execute(select(Department).where(Department.id == class_in.department_id))).scalars().first()
+    if not dept:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Department '{class_in.department_id}' does not exist.")
+    class_grp = ClassGroup(
+        department_id=dept.id,
+        name=class_in.name.strip(),
+        year=class_in.year.strip(),
+        semester=class_in.semester.strip(),
+        section=class_in.section.strip(),
+    )
+    db.add(class_grp)
+    await db.commit()
+    await db.refresh(class_grp)
+    return class_grp
 
 
 @router.get("", response_model=List[StudentOut])
@@ -128,43 +168,40 @@ async def create_student(
             detail=f"Student with Roll Number '{student_in.roll_number}' already exists.",
         )
 
-    # Resolve department foreign key
+    # Resolve department foreign key — by id or code. An unknown value is
+    # a 400, never a silent fallback: the old code put the student in the
+    # first department in the DB, i.e. the wrong class, with no error.
     dept_res = await db.execute(
         select(Department).where(
             (Department.id == student_in.department_id) | (Department.code == student_in.department_id)
         )
     )
     dept_obj = dept_res.scalars().first()
-    if dept_obj:
-        target_dept_id = dept_obj.id
-    else:
-        # Fallback to default department if available
-        first_dept = (await db.execute(select(Department))).scalars().first()
-        if not first_dept:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No academic departments found. Please configure a department first.",
-            )
-        target_dept_id = first_dept.id
+    if not dept_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Department '{student_in.department_id}' does not exist. Create it first (POST /students/departments).",
+        )
+    target_dept_id = dept_obj.id
 
-    # Resolve class foreign key
+    # Resolve class foreign key — same rule: unknown class = 400.
     class_res = await db.execute(
         select(ClassGroup).where(
             (ClassGroup.id == student_in.class_id) | (ClassGroup.name == student_in.class_id)
         )
     )
     class_obj = class_res.scalars().first()
-    if class_obj:
-        target_class_id = class_obj.id
-    else:
-        # Fallback to default class if available
-        first_class = (await db.execute(select(ClassGroup))).scalars().first()
-        if not first_class:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No classes found. Please configure a class section first.",
-            )
-        target_class_id = first_class.id
+    if not class_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Class '{student_in.class_id}' does not exist. Create it first (POST /students/classes).",
+        )
+    if class_obj.department_id != target_dept_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Class '{class_obj.name}' does not belong to the selected department.",
+        )
+    target_class_id = class_obj.id
 
     student = Student(
         roll_number=student_in.roll_number.strip(),
@@ -260,10 +297,18 @@ async def update_student(
     if update_data.email is not None:
         s.email = update_data.email.strip() if update_data.email.strip() else None
     if update_data.department_id is not None:
-        s.department_id = update_data.department_id
+        dept = (await db.execute(select(Department).where(Department.id == update_data.department_id))).scalars().first()
+        if not dept:
+            raise HTTPException(status_code=400, detail=f"Department '{update_data.department_id}' does not exist.")
+        s.department_id = dept.id
     if update_data.class_id is not None:
-        s.class_id = update_data.class_id
+        cls = (await db.execute(select(ClassGroup).where(ClassGroup.id == update_data.class_id))).scalars().first()
+        if not cls:
+            raise HTTPException(status_code=400, detail=f"Class '{update_data.class_id}' does not exist.")
+        s.class_id = cls.id
     if update_data.status is not None:
+        if update_data.status not in ("ACTIVE", "INACTIVE", "GRADUATED"):
+            raise HTTPException(status_code=400, detail=f"Invalid status '{update_data.status}'. Use ACTIVE, INACTIVE or GRADUATED.")
         s.status = update_data.status
 
     # Audit log

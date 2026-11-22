@@ -10,8 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import get_db
-from backend.app.models.entities import LabSession, Subject, Laboratory, User, ClassGroup
-from backend.app.schemas.domain import SessionCreate, SessionOut, SubjectOut
+from backend.app.models.entities import LabSession, Subject, Laboratory, User, ClassGroup, Department
+from backend.app.schemas.domain import (
+    SessionCreate,
+    SessionOut,
+    SubjectCreate,
+    SubjectOut,
+    LaboratoryCreate,
+    LaboratoryOut,
+)
 from backend.app.api.v1.deps import require_teacher_or_admin
 
 router = APIRouter(prefix="/sessions", tags=["Lab Sessions"])
@@ -22,6 +29,52 @@ async def list_subjects(db: AsyncSession = Depends(get_db)):
     """Lists all academic subjects for timetable scheduling."""
     res = await db.execute(select(Subject).order_by(Subject.name))
     return res.scalars().all()
+
+
+@router.post("/subjects", response_model=SubjectOut, status_code=status.HTTP_201_CREATED)
+async def create_subject(
+    subject_in: SubjectCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Creates a subject. The department must exist."""
+    dept_obj = (await db.execute(select(Department).where(Department.id == subject_in.department_id))).scalars().first()
+    if not dept_obj:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Department '{subject_in.department_id}' does not exist.")
+    subject = Subject(department_id=dept_obj.id, code=subject_in.code.strip(), name=subject_in.name.strip())
+    db.add(subject)
+    await db.commit()
+    await db.refresh(subject)
+    return subject
+
+
+@router.get("/laboratories", response_model=List[LaboratoryOut])
+async def list_laboratories(db: AsyncSession = Depends(get_db)):
+    """Lists laboratories (the gate lab is the one sessions run in)."""
+    res = await db.execute(select(Laboratory).order_by(Laboratory.name))
+    return res.scalars().all()
+
+
+@router.post("/laboratories", response_model=LaboratoryOut, status_code=status.HTTP_201_CREATED)
+async def create_laboratory(
+    lab_in: LaboratoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """Creates a laboratory. Room numbers are unique."""
+    existing = (await db.execute(select(Laboratory).where(Laboratory.room_number == lab_in.room_number.strip()))).scalars().first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Laboratory room '{lab_in.room_number}' already exists.")
+    lab = Laboratory(
+        name=lab_in.name.strip(),
+        room_number=lab_in.room_number.strip(),
+        building=lab_in.building.strip(),
+        capacity=lab_in.capacity,
+    )
+    db.add(lab)
+    await db.commit()
+    await db.refresh(lab)
+    return lab
 
 
 @router.get("", response_model=List[SessionOut])
@@ -144,8 +197,39 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_teacher_or_admin),
 ):
-    """Schedules a new lab session."""
+    """Schedules a new lab session. Every referenced row must exist,
+    the session must end after it starts, and it must not overlap an
+    existing session for the same class in the same lab."""
+    if session_in.start_time >= session_in.end_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session end_time must be after start_time.")
+    for model, value, label in (
+        (Subject, session_in.subject_id, "Subject"),
+        (Laboratory, session_in.laboratory_id, "Laboratory"),
+        (ClassGroup, session_in.class_id, "Class"),
+    ):
+        exists = (await db.execute(select(model).where(model.id == value))).scalars().first()
+        if not exists:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} '{value}' does not exist.")
     teacher_id = session_in.teacher_id or current_user.id
+    teacher = (await db.execute(select(User).where(User.id == teacher_id))).scalars().first()
+    if not teacher:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Teacher '{teacher_id}' does not exist.")
+    overlap = (await db.execute(
+        select(LabSession).where(
+            and_(
+                LabSession.class_id == session_in.class_id,
+                LabSession.laboratory_id == session_in.laboratory_id,
+                LabSession.status.in_(["SCHEDULED", "ACTIVE"]),
+                LabSession.start_time < session_in.end_time,
+                LabSession.end_time > session_in.start_time,
+            )
+        )
+    )).scalars().first()
+    if overlap:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This class already has a session in this lab overlapping the requested time.",
+        )
 
     new_session = LabSession(
         subject_id=session_in.subject_id,
@@ -213,8 +297,12 @@ async def update_session_status(
         raise HTTPException(status_code=404, detail="Session not found.")
 
     if status_update:
+        if status_update not in ("SCHEDULED", "ACTIVE", "COMPLETED", "CANCELLED"):
+            raise HTTPException(status_code=400, detail=f"Invalid status '{status_update}'. Use SCHEDULED, ACTIVE, COMPLETED or CANCELLED.")
         s.status = status_update
     if late_grace_minutes is not None:
+        if late_grace_minutes < 0:
+            raise HTTPException(status_code=400, detail="late_grace_minutes must be 0 or more.")
         s.late_grace_minutes = late_grace_minutes
 
     await db.commit()

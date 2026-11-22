@@ -55,10 +55,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   useEffect(() => {
     if (mode !== 'snapshot' && !streamError) return;
 
+    // Snapshot fallback polls at 2 s (0.5 FPS), not 250 ms: the old
+    // 4 req/s per open dashboard was pure load on the edge box for a
+    // fallback view. The live MJPEG stream is the primary feed.
     setSnapshotSrc(api.getCameraSnapshotUrl());
     const interval = setInterval(() => {
       setSnapshotSrc(api.getCameraSnapshotUrl());
-    }, 250);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [mode, streamError]);

@@ -15,14 +15,28 @@ def main():
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     args = parser.parse_args()
 
-    # Verify models
+    # Verify models — download them automatically if missing. The ONNX
+    # models are gitignored, so a fresh clone has none; previously the
+    # launcher just exited here and the README never said where to get
+    # them from in the quick-start.
     yunet_path = os.path.join("models", "face_detection_yunet_2023mar.onnx")
     sface_path = os.path.join("models", "face_recognition_sface_2021dec.onnx")
 
     if not os.path.exists(yunet_path) or not os.path.exists(sface_path):
-        print("[ERROR] Required ONNX models missing from models/ directory.")
-        print("Please run benchmarks/cpu_benchmark.py or download YuNet and SFace models.")
-        sys.exit(1)
+        print("[INFO] ONNX models missing — downloading them now (one-time, ~1 MB total)...")
+        print("[INFO] Source: github.com/opencv/opencv_zoo (Apache 2.0).")
+        import subprocess
+
+        result = subprocess.run([sys.executable, "download_models.py"])
+        if result.returncode != 0 or not os.path.exists(yunet_path) or not os.path.exists(sface_path):
+            print("[ERROR] Could not download the ONNX models.")
+            print("Check your internet connection, then run manually:")
+            print("    python download_models.py")
+            print("and make sure these files exist:")
+            print(f"    {yunet_path}")
+            print(f"    {sface_path}")
+            sys.exit(1)
+        print("[INFO] Models downloaded.")
 
     print("=" * 65)
     print(" AI FACE RECOGNITION ATTENDANCE SYSTEM (COLLEGE LABORATORIES)")
