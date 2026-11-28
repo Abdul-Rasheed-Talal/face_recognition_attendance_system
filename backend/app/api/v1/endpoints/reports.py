@@ -716,3 +716,164 @@ async def list_archived_test_records(db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/projector-live")
+async def get_projector_live_display(db: AsyncSession = Depends(get_db)):
+    """
+    Dedicated real-time payload for the second-screen / projector display.
+    Shows ONLY today's Computer Lab-1 attendance:
+    - Auto-switches to the active lecture (with back-to-back carry-forward)
+    - Returns full lists of Present, Late, and Absent student names & roll numbers
+    - Returns teacher name, class name, room name (Computer Lab-1), 12h time, and today's schedule strip.
+    """
+    tz = ZoneInfo(settings.TIMEZONE)
+    now_local = datetime.now(tz)
+    now_utc = datetime.now(timezone.utc)
+
+    from backend.app.api.v1.endpoints.timetable import sync_sessions_for_date
+    today_sessions = await sync_sessions_for_date(db)
+
+    # Filter out cancelled sessions for active detection, keep all for schedule strip
+    active_session = None
+    next_session = None
+    schedule_strip = []
+
+    for s in today_sessions:
+        st_utc = s.start_time if s.start_time.tzinfo else s.start_time.replace(tzinfo=timezone.utc)
+        et_utc = s.end_time if s.end_time.tzinfo else s.end_time.replace(tzinfo=timezone.utc)
+        subj_name = s.subject_title or (s.subject.name if s.subject else "Computer Lab")
+        teacher_name = s.teacher_display_name or (s.teacher.full_name if s.teacher else "")
+        cls_name = s.class_group.name if s.class_group else "CIT Class"
+        time_12h = f"{_fmt_12h(st_utc, tz)} - {_fmt_12h(et_utc, tz)}"
+
+        is_cancelled = s.status == "CANCELLED"
+        is_live = (not is_cancelled) and (st_utc - timedelta(minutes=15) <= now_utc <= et_utc)
+        is_past = et_utc < now_utc
+        is_upcoming = (not is_cancelled) and (st_utc > now_utc + timedelta(minutes=15))
+
+        if is_live and active_session is None:
+            active_session = s
+        elif (not is_cancelled) and (st_utc > now_utc) and next_session is None and s != active_session:
+            next_session = s
+
+        schedule_strip.append({
+            "session_id": s.id,
+            "class_name": cls_name,
+            "subject_name": subj_name,
+            "teacher_name": teacher_name,
+            "time_12h": time_12h,
+            "state": "CANCELLED" if is_cancelled else ("LIVE" if is_live else ("COMPLETED" if is_past else "UPCOMING")),
+        })
+
+    # Also check if any session was manually forced ACTIVE
+    if active_session is None:
+        for s in today_sessions:
+            if s.status == "ACTIVE":
+                active_session = s
+                break
+
+    current_payload = None
+    if active_session is not None:
+        st_utc = active_session.start_time if active_session.start_time.tzinfo else active_session.start_time.replace(tzinfo=timezone.utc)
+        et_utc = active_session.end_time if active_session.end_time.tzinfo else active_session.end_time.replace(tzinfo=timezone.utc)
+
+        # Auto-carry forward if consecutive lecture has started
+        if now_utc >= st_utc:
+            await AttendanceService.carry_forward_from_previous_session(db, active_session)
+
+        # Fetch all active students in this lecture's class
+        cls_students = (
+            await db.execute(
+                select(Student)
+                .where(and_(Student.class_id == active_session.class_id, Student.status == "ACTIVE"))
+                .order_by(Student.roll_number.asc())
+            )
+        ).scalars().all()
+
+        # Fetch attendance records for this session
+        att_rows = (
+            await db.execute(
+                select(AttendanceRecord).where(AttendanceRecord.session_id == active_session.id)
+            )
+        ).scalars().all()
+        att_by_student = {r.student_id: r for r in att_rows}
+
+        present_list = []
+        late_list = []
+        absent_list = []
+
+        for st in cls_students:
+            rec = att_by_student.get(st.id)
+            if rec and rec.status in ("PRESENT", "EXCUSED", "MANUAL_CORRECTION"):
+                present_list.append({
+                    "student_id": st.id,
+                    "roll_number": st.roll_number,
+                    "full_name": st.full_name,
+                    "entry_time_12h": _fmt_12h(rec.timestamp, tz),
+                    "verification_method": rec.verification_method,
+                })
+            elif rec and rec.status == "LATE":
+                late_list.append({
+                    "student_id": st.id,
+                    "roll_number": st.roll_number,
+                    "full_name": st.full_name,
+                    "entry_time_12h": _fmt_12h(rec.timestamp, tz),
+                    "verification_method": rec.verification_method,
+                })
+            else:
+                absent_list.append({
+                    "student_id": st.id,
+                    "roll_number": st.roll_number,
+                    "full_name": st.full_name,
+                })
+
+        total_cls = len(cls_students)
+        attended = len(present_list) + len(late_list)
+        pct = round((attended / total_cls * 100.0), 1) if total_cls > 0 else 0.0
+
+        # Compute lecture progress percentage (0 - 100)
+        total_sec = max(1.0, (et_utc - st_utc).total_seconds())
+        elapsed_sec = max(0.0, min(total_sec, (now_utc - st_utc).total_seconds()))
+        progress_pct = round((elapsed_sec / total_sec) * 100.0, 1)
+
+        current_payload = {
+            "session_id": active_session.id,
+            "class_name": active_session.class_group.name if active_session.class_group else "CIT Class",
+            "subject_name": active_session.subject_title or (active_session.subject.name if active_session.subject else "Computer Lab"),
+            "teacher_name": active_session.teacher_display_name or (active_session.teacher.full_name if active_session.teacher else "Lab Instructor"),
+            "room_name": "Computer Lab-1",
+            "time_12h": f"{_fmt_12h(st_utc, tz)} – {_fmt_12h(et_utc, tz)}",
+            "late_grace_minutes": active_session.late_grace_minutes,
+            "status": active_session.status,
+            "status_note": active_session.status_note,
+            "progress_pct": progress_pct,
+            "total_students": total_cls,
+            "present_count": len(present_list),
+            "late_count": len(late_list),
+            "absent_count": len(absent_list),
+            "attendance_pct": pct,
+            "present_students": present_list,
+            "late_students": late_list,
+            "absent_students": absent_list,
+        }
+
+    next_payload = None
+    if next_session is not None:
+        nst = next_session.start_time if next_session.start_time.tzinfo else next_session.start_time.replace(tzinfo=timezone.utc)
+        net = next_session.end_time if next_session.end_time.tzinfo else next_session.end_time.replace(tzinfo=timezone.utc)
+        next_payload = {
+            "class_name": next_session.class_group.name if next_session.class_group else "CIT Class",
+            "subject_name": next_session.subject_title or (next_session.subject.name if next_session.subject else "Computer Lab"),
+            "teacher_name": next_session.teacher_display_name or (next_session.teacher.full_name if next_session.teacher else ""),
+            "room_name": "Computer Lab-1",
+            "time_12h": f"{_fmt_12h(nst, tz)} – {_fmt_12h(net, tz)}",
+        }
+
+    return {
+        "today_date_label": now_local.strftime("%A, %B %d, %Y"),
+        "room_name": "Computer Lab-1",
+        "current_lecture": current_payload,
+        "next_lecture": next_payload,
+        "today_schedule": schedule_strip,
+    }
+
+

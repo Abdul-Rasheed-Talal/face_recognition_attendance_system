@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Radio, Clock, Monitor } from 'lucide-react';
+import { Camera, Radio, Clock, Monitor, Tv } from 'lucide-react';
 import { LabSession, CameraHealth } from '../types';
 
 interface NavbarProps {
   activeSession: LabSession | null;
   cameraHealth?: CameraHealth;
   isWsConnected: boolean;
+  onOpenProjector?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeSession,
   cameraHealth,
   isWsConnected,
+  onOpenProjector,
 }) => {
   const isCamConnected = cameraHealth?.camera_connected ?? false;
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -97,6 +99,24 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Radio className={`w-3.5 h-3.5 ${isWsConnected ? 'text-emerald-600' : 'text-amber-500 animate-pulse'}`} />
           <span className="text-[11px] font-medium">{isWsConnected ? 'LIVE' : 'CONNECTING'}</span>
         </div>
+
+        {/* Open Standalone Projector / Second-Screen Display */}
+        <a
+          href="?display=projector"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => {
+            if (onOpenProjector && !e.ctrlKey && !e.metaKey && e.shiftKey) {
+              e.preventDefault();
+              onOpenProjector();
+            }
+          }}
+          title="Opens live attendance screen in a new window for a projector or second monitor"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+        >
+          <Tv className="w-3.5 h-3.5" />
+          <span>Projector Screen</span>
+        </a>
       </div>
     </header>
   );

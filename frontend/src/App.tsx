@@ -8,11 +8,16 @@ import { StudentsView } from './components/StudentsView';
 import { AttendanceView } from './components/AttendanceView';
 import { AcademicYearView } from './components/AcademicYearView';
 import { GateCameraSettings } from './components/GateCameraSettings';
+import { ProjectorView } from './components/ProjectorView';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
 import { LabSession, DashboardStatistics, LiveAttendanceEvent } from './types';
 
 export function App() {
+  const [isProjectorMode, setIsProjectorMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('display') === 'projector';
+  });
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [activeSession, setActiveSession] = useState<LabSession | null>(null);
   const [stats, setStats] = useState<DashboardStatistics | null>(null);
@@ -47,6 +52,19 @@ export function App() {
 
   const { isConnected: isWsConnected } = useWebSocket(handleLiveEvent);
 
+  if (isProjectorMode) {
+    return (
+      <ProjectorView
+        onExitProjector={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('display');
+          window.history.replaceState({}, '', url.toString());
+          setIsProjectorMode(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-stone-50 text-stone-800">
       {/* Top Header (No Login / Signup) */}
@@ -54,6 +72,7 @@ export function App() {
         activeSession={activeSession}
         cameraHealth={stats?.camera_health}
         isWsConnected={isWsConnected}
+        onOpenProjector={() => setIsProjectorMode(true)}
       />
 
       {/* Main Content Area with Sidebar */}

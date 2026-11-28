@@ -29,3 +29,7 @@ models/*.onnx
 .DS_Store
 Thumbs.db
 
+*Student_Pictures
+Students_Pictures
+*Students_Pictures
+

@@ -585,6 +585,10 @@ class ApiService {
     }>>('/reports/test-archives');
   }
 
+  async getProjectorLiveData() {
+    return this.request<any>('/reports/projector-live');
+  }
+
   // CSV export: the old plain <a href> sent no Bearer token, so the
   // export 401'd for everyone. Fetch with the token and download a blob.
   async downloadCsv(sessionId?: string): Promise<void> {
