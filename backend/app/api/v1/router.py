@@ -12,6 +12,8 @@ from backend.app.api.v1.endpoints import (
     attendance,
     camera,
     reports,
+    timetable,
+    academic,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -23,4 +25,5 @@ api_router.include_router(sessions.router)
 api_router.include_router(attendance.router)
 api_router.include_router(camera.router)
 api_router.include_router(reports.router)
-
+api_router.include_router(timetable.router)
+api_router.include_router(academic.router)

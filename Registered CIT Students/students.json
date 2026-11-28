@@ -1,0 +1,688 @@
+{
+  "cit1": [
+    {
+      "roll": "26-CIT-101",
+      "name": "Muhammad Tayab Hanif",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-102",
+      "name": "M. Hassaan Ahmad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-103",
+      "name": "M. Huzaifa Mubeen",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-104",
+      "name": "Murtaza Anwar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-105",
+      "name": "Ali Hasnain",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-106",
+      "name": "Ameer Moavia",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-107",
+      "name": "Ayaz Raza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-108",
+      "name": "M. Farhan Pervaiz",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-109",
+      "name": "M. Sana Ullah Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-110",
+      "name": "Babar Hussain",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-111",
+      "name": "Muhammad Aitazaz",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-112",
+      "name": "Muhammad Faizan Yasir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-113",
+      "name": "Muhammad Nouman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-114",
+      "name": "Muhammad Hammad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-115",
+      "name": "Muhamamd Naeem",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-116",
+      "name": "M. Zunnuren Haider",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-117",
+      "name": "Hassan Nawaz Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-118",
+      "name": "Muhammad Sohail Asghar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-119",
+      "name": "Muhammad Asim",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-120",
+      "name": "Naeem Ur Rehman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-121",
+      "name": "Muhammad Danial Aslam",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-122",
+      "name": "Ghulam Mustafa",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-123",
+      "name": "Muhammad Umair Sultan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-124",
+      "name": "Ahsan Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-126",
+      "name": "M. Noman Hassan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-127",
+      "name": "Abdullah",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-128",
+      "name": "Muhammad Tayyab Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-129",
+      "name": "Muhammad Haseeb",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-131",
+      "name": "Muhammad Luqman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-132",
+      "name": "Muhammad Fawad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-133",
+      "name": "Habib Ullah Tahir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-134",
+      "name": "Abdul Ghaffar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-135",
+      "name": "Muhammad Ammar Kazim",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-136",
+      "name": "Faheem Abdullah",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-137",
+      "name": "M.Huzaifa Yazdani",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-138",
+      "name": "Muhammad Shehzad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-139",
+      "name": "Ahmad Rizwan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-140",
+      "name": "Muhamamd Ammar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-141",
+      "name": "Muhammad Ismail",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-142",
+      "name": "Sheraz Shabbir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-143",
+      "name": "Abdullah Ameer",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-144",
+      "name": "Saad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-145",
+      "name": "Muhammad Shahid Iqbal",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-146",
+      "name": "Sheraz Ahmad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-147",
+      "name": "Muhammad Asim Jabbar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-148",
+      "name": "Mhuammad Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-149",
+      "name": "Muhammad Awais",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "26-CIT-150",
+      "name": "Faheem Ahmad",
+      "session": "2026-2027"
+    }
+  ],
+  "cit2": [
+    {
+      "roll": "25-CIT-102",
+      "name": "Syed Hassan Murtaza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-103",
+      "name": "Syed M. Qamber Mehdi",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-106",
+      "name": "M. Mudassir Hassan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-108",
+      "name": "Waseem Sajjad Akram",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-109",
+      "name": "Uzair Ahmed",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-110",
+      "name": "Peer Haider Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-111",
+      "name": "Muhammad Arslan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-112",
+      "name": "Muhammad Burhan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-113",
+      "name": "Muhammad Noman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-114",
+      "name": "Shakeeb Nawaz",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-115",
+      "name": "Zain Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-116",
+      "name": "Muhammad Awais Nasir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-118",
+      "name": "Hamid Mujtaba",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-119",
+      "name": "Abdul Wahab karori",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-120",
+      "name": "Abdul Malik Bin Zubair",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-121",
+      "name": "Muhammad Hamza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-122",
+      "name": "Hussain Abbas Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-123",
+      "name": "Fazal Ur Rehman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-124",
+      "name": "Abu Huraira M. Eisa",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-125",
+      "name": "Muhammad Ali Naqi",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-126",
+      "name": "Aftab Asim",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-127",
+      "name": "Zaigham Abbas",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-128",
+      "name": "Alyan Ahmad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-130",
+      "name": "M. Ghufran Shareef",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-131",
+      "name": "Muhammad Anas",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-132",
+      "name": "M. Hassan Naveed",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-133",
+      "name": "Muhammad Saad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-134",
+      "name": "Muhammad Umar Shafai",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-135",
+      "name": "Mohsin Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-136",
+      "name": "Muhammad Hasnain",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-137",
+      "name": "M. Abu Bakar Siddique",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-139",
+      "name": "Arslan Haider",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-140",
+      "name": "M. Talha Aamir Paracha",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-141",
+      "name": "Muhammad Abdullah",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-142",
+      "name": "Ali Haider",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-143",
+      "name": "Muhammad Junaid",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-145",
+      "name": "Muhammad Ahtisham",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-146",
+      "name": "Haseeb Ullah",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-147",
+      "name": "Aoun Muhammad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-148",
+      "name": "Hussain Mehdi",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-149",
+      "name": "Sohaib",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-150",
+      "name": "Muhammad Amjad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-151",
+      "name": "Muhammad Anas",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "25-CIT-152",
+      "name": "Mahad Ali",
+      "session": "2026-2027"
+    }
+  ],
+  "cit3": [
+    {
+      "roll": "24-CIT-101",
+      "name": "M. Abdul Rasheed Talal",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-102",
+      "name": "Muhammad Hammad Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-104",
+      "name": "M. Imran Qammar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-105",
+      "name": "Muhammad Aliyan Gul",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-106",
+      "name": "Muhammad Mubashir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-108",
+      "name": "Ali Raza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-109",
+      "name": "Muhammad Usman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-110",
+      "name": "M. Zeeshan Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-111",
+      "name": "Muhammad Zain Tahir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-112",
+      "name": "Yasir Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-114",
+      "name": "M. Umair Malik",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-115",
+      "name": "M.Moazam Nisar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-116",
+      "name": "Muhammad Suleman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-118",
+      "name": "M. Hasnain Tahir",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-119",
+      "name": "M. Ameer Hamza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-120",
+      "name": "M. Tahir Akbar",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-122",
+      "name": "Zia Ur Rehman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-123",
+      "name": "Rafay Moiz",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-124",
+      "name": "Waseem Abbas",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-125",
+      "name": "Waqas",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-126",
+      "name": "M. Ahsan Khan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-127",
+      "name": "Adil Ali",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-128",
+      "name": "Abdul Saboor",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-129",
+      "name": "Muhammad Sajjad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-130",
+      "name": "Muhammad Zunair",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-131",
+      "name": "Arslan Kashif",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-134",
+      "name": "Muhammad Rehman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-135",
+      "name": "Sheikh M. Huzaifa",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-136",
+      "name": "Mudasir Iqbal",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-137",
+      "name": "Muhammad Faizan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-138",
+      "name": "Muhammad Arsalan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-139",
+      "name": "Faheem Raza",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-140",
+      "name": "Danial Mustafa",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-141",
+      "name": "M. Tamoor Shahzad",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-142",
+      "name": "Muhammad Noman",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-143",
+      "name": "Muhammad Humayun",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-144",
+      "name": "M. Tayyab Aslam",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-146",
+      "name": "M. Umair Haider",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-147",
+      "name": "Muhammad Ali Fawaz",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-148",
+      "name": "M.Wasi Ashraf",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-149",
+      "name": "M.Jawad Irfan",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-150",
+      "name": "M. Mudasir Ashiq",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-153",
+      "name": "M. Ibrahim",
+      "session": "2026-2027"
+    },
+    {
+      "roll": "24-CIT-154",
+      "name": "M Naseer",
+      "session": "2026-2027"
+    }
+  ]
+}

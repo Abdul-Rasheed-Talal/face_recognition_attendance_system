@@ -2,43 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { TimetableView } from './components/TimetableView';
 import { StudentsView } from './components/StudentsView';
 import { AttendanceView } from './components/AttendanceView';
+import { AcademicYearView } from './components/AcademicYearView';
 import { GateCameraSettings } from './components/GateCameraSettings';
-import { LoginModal } from './components/LoginModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { api } from './services/api';
-import { User, LabSession, DashboardStatistics, LiveAttendanceEvent } from './types';
+import { LabSession, DashboardStatistics, LiveAttendanceEvent } from './types';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeSession, setActiveSession] = useState<LabSession | null>(null);
   const [stats, setStats] = useState<DashboardStatistics | null>(null);
   const [recentEvents, setRecentEvents] = useState<LiveAttendanceEvent[]>([]);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-
-  // Initial Auth Check (Runs once on mount)
-  useEffect(() => {
-    if (api.getToken()) {
-      api.getProfile()
-        .then((profile) => setCurrentUser(profile))
-        .catch(() => {
-          api.logout();
-          setCurrentUser(null);
-        });
-    }
-
-    const handleAuthRequired = () => {
-      setCurrentUser(null);
-    };
-    window.addEventListener('fras_auth_required', handleAuthRequired);
-
-    return () => {
-      window.removeEventListener('fras_auth_required', handleAuthRequired);
-    };
-  }, []);
 
   // Periodic Telemetry Polling (Every 4 seconds)
   const pollTelemetry = useCallback(async () => {
@@ -47,7 +25,7 @@ export function App() {
         api.getActiveSession().catch(() => null),
         api.getDashboardStatistics().catch(() => null),
       ]);
-      if (sess) setActiveSession(sess);
+      setActiveSession(sess);
       if (s) setStats(s);
     } catch (err) {
       console.debug('Telemetry poll error:', err);
@@ -63,37 +41,24 @@ export function App() {
   // WebSocket event handler for real-time live events
   const handleLiveEvent = useCallback((event: LiveAttendanceEvent) => {
     setRecentEvents((prev) => [event, ...prev.slice(0, 29)]);
-    // Refresh stats when an attendance event arrives
     api.getDashboardStatistics().then(setStats).catch(() => {});
     api.getActiveSession().then(setActiveSession).catch(() => {});
   }, []);
 
   const { isConnected: isWsConnected } = useWebSocket(handleLiveEvent);
 
-  const handleLogout = () => {
-    api.logout();
-    setCurrentUser(null);
-  };
-
   return (
     <div className="flex flex-col min-h-screen bg-stone-50 text-stone-800">
-      {/* Top Header */}
+      {/* Top Header (No Login / Signup) */}
       <Navbar
-        currentUser={currentUser}
         activeSession={activeSession}
         cameraHealth={stats?.camera_health}
         isWsConnected={isWsConnected}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onLogout={handleLogout}
       />
 
       {/* Main Content Area with Sidebar */}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          currentTab={currentTab}
-          onSelectTab={setCurrentTab}
-          userRole={currentUser?.role}
-        />
+        <Sidebar currentTab={currentTab} onSelectTab={setCurrentTab} />
 
         <main className="flex-1 overflow-y-auto p-6 bg-stone-50">
           {currentTab === 'dashboard' && (
@@ -105,34 +70,24 @@ export function App() {
             />
           )}
 
+          {currentTab === 'analytics' && <AnalyticsView />}
+
           {currentTab === 'timetable' && <TimetableView />}
 
           {currentTab === 'attendance' && <AttendanceView />}
 
-          {currentTab === 'students' && (
-            <StudentsView
-              currentUser={currentUser}
-              onOpenLogin={() => setIsLoginModalOpen(true)}
-            />
-          )}
+          {currentTab === 'students' && <StudentsView />}
+
+          {currentTab === 'academic' && <AcademicYearView />}
 
           {currentTab === 'camera' && (
             <GateCameraSettings
-              currentUser={currentUser}
               cameraHealth={stats?.camera_health}
-              onOpenLogin={() => setIsLoginModalOpen(true)}
               onRefresh={pollTelemetry}
             />
           )}
         </main>
       </div>
-
-      {/* Authentication Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={(user) => setCurrentUser(user)}
-      />
     </div>
   );
 }

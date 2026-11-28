@@ -117,6 +117,53 @@ export interface LiveAttendanceEvent {
   message?: string;
 }
 
+export interface TimetableSlot {
+  id: string;
+  day_of_week: number;
+  day_name: string;
+  class_id: string;
+  class_name: string;
+  subject_name: string;
+  teacher_name: string;
+  start_time_str: string;
+  end_time_str: string;
+  late_grace_minutes: number;
+  is_active: boolean;
+}
+
+export interface DailySession {
+  id: string;
+  timetable_slot_id?: string | null;
+  class_id: string;
+  class_name: string;
+  subject_name: string;
+  teacher_name: string;
+  start_time: string;
+  end_time: string;
+  start_time_local: string;
+  end_time_local: string;
+  late_grace_minutes: number;
+  status: 'SCHEDULED' | 'ACTIVE' | 'RESCHEDULED' | 'CANCELLED' | 'COMPLETED';
+  status_note?: string | null;
+  is_live_now: boolean;
+}
+
+export interface ClassCountSummary {
+  class_id: string;
+  class_name: string;
+  active_students: number;
+  face_enrolled: number;
+}
+
+export interface AcademicSummary {
+  classes: ClassCountSummary[];
+  total_active_students: number;
+  total_face_enrolled: number;
+  total_graduated: number;
+  weekly_timetable_slots: number;
+  folder_json_files: string[];
+}
+
 export interface CorrectionRequest {
   id: string;
   student_id: string;

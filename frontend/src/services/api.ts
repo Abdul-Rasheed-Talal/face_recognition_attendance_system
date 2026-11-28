@@ -121,10 +121,11 @@ class ApiService {
     return this.request<ClassItem[]>(`/students/classes${qs}`);
   }
 
-  async listStudents(params?: { search?: string; status?: string }): Promise<Student[]> {
+  async listStudents(params?: { search?: string; status?: string; class_id?: string }): Promise<Student[]> {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
     if (params?.status) query.set('status', params.status);
+    if (params?.class_id) query.set('class_id', params.class_id);
     const qs = query.toString() ? `?${query.toString()}` : '';
     return this.request<Student[]>(`/students${qs}`);
   }
@@ -280,9 +281,21 @@ class ApiService {
     });
   }
 
+  async carryForwardAttendance(sessionId: string): Promise<{
+    success: boolean;
+    carried_count: number;
+    message: string;
+  }> {
+    return this.request(`/attendance/carry-forward/${sessionId}`, { method: 'POST' });
+  }
+
   // --- Camera ---
   getCameraStreamUrl(): string {
     return `${API_BASE}/camera/stream`;
+  }
+
+  getCameraRawStreamUrl(): string {
+    return `${API_BASE}/camera/raw-stream`;
   }
 
   getCameraSnapshotUrl(): string {
@@ -385,9 +398,191 @@ class ApiService {
     );
   }
 
-  // --- Reports & Dashboard ---
+  // --- CIT Lab Weekly Timetable & Daily Rescheduling ---
+  async listTimetableSlots(params?: { day_of_week?: number; class_id?: string }) {
+    const q = new URLSearchParams();
+    if (params?.day_of_week !== undefined) q.set('day_of_week', String(params.day_of_week));
+    if (params?.class_id) q.set('class_id', params.class_id);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return this.request<import('../types').TimetableSlot[]>(`/timetable/slots${qs}`);
+  }
+
+  async createTimetableSlot(data: {
+    day_of_week: number;
+    class_id: string;
+    subject_name: string;
+    teacher_name: string;
+    start_time_str: string;
+    end_time_str: string;
+    late_grace_minutes: number;
+  }) {
+    return this.request<import('../types').TimetableSlot>('/timetable/slots', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTimetableSlot(id: string, data: Partial<{
+    day_of_week: number;
+    class_id: string;
+    subject_name: string;
+    teacher_name: string;
+    start_time_str: string;
+    end_time_str: string;
+    late_grace_minutes: number;
+    is_active: boolean;
+  }>) {
+    return this.request<import('../types').TimetableSlot>(`/timetable/slots/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTimetableSlot(id: string): Promise<void> {
+    await this.request(`/timetable/slots/${id}`, { method: 'DELETE' });
+  }
+
+  async getDailySchedule(targetDate?: string) {
+    const qs = targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : '';
+    return this.request<import('../types').DailySession[]>(`/timetable/today${qs}`);
+  }
+
+  async createExtraSession(data: {
+    target_date?: string;
+    class_id: string;
+    subject_name: string;
+    teacher_name: string;
+    start_time_str: string;
+    end_time_str: string;
+    late_grace_minutes: number;
+    status_note?: string;
+  }) {
+    return this.request<import('../types').DailySession>('/timetable/today/extra', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async rescheduleSession(sessionId: string, data: {
+    target_date?: string;
+    start_time_str: string;
+    end_time_str: string;
+    teacher_name?: string;
+    subject_name?: string;
+    class_id?: string;
+    late_grace_minutes?: number;
+    reason: string;
+  }) {
+    return this.request<import('../types').DailySession>(`/timetable/sessions/${sessionId}/reschedule`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelSession(sessionId: string, reason: string) {
+    return this.request<import('../types').DailySession>(`/timetable/sessions/${sessionId}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async restoreSession(sessionId: string) {
+    return this.request<import('../types').DailySession>(`/timetable/sessions/${sessionId}/restore`, {
+      method: 'PUT',
+    });
+  }
+
+  // --- Academic Year Rollover & Bulk JSON Student Import ---
+  async getAcademicSummary() {
+    return this.request<import('../types').AcademicSummary>('/academic/summary');
+  }
+
+  async performAcademicRollover(data: { academic_year_label: string; clear_weekly_timetable: boolean }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      graduated_count: number;
+      promoted_to_3rd_count: number;
+      promoted_to_2nd_count: number;
+      cleared_timetable_slots: number;
+    }>('/academic/rollover', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async importStudentsFromFolder(splitFiles = true) {
+    return this.request<{
+      success: boolean;
+      imported: number;
+      skipped_duplicates: number;
+      per_class: Record<string, number>;
+      files_processed: string[];
+      split_files_created: string[];
+    }>(`/academic/import-from-folder?split_files=${splitFiles}`, {
+      method: 'POST',
+    });
+  }
+
+  async importStudentsJsonFile(file: File, defaultClassName?: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const qs = defaultClassName ? `?default_class_name=${encodeURIComponent(defaultClassName)}` : '';
+    return this.request<{
+      success: boolean;
+      imported: number;
+      skipped_duplicates: number;
+      per_class: Record<string, number>;
+    }>(`/academic/import-json${qs}`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  // --- Reports, Analytics & Production Test Archive ---
   async getDashboardStatistics(): Promise<DashboardStatistics> {
     return this.request<DashboardStatistics>('/reports/statistics');
+  }
+
+  async getAttendanceAnalytics(params: {
+    period: 'today' | 'current_month' | 'previous_month' | 'month' | 'date';
+    month?: string;
+    target_date?: string;
+    class_id?: string;
+  }) {
+    const q = new URLSearchParams({ period: params.period });
+    if (params.month) q.set('month', params.month);
+    if (params.target_date) q.set('target_date', params.target_date);
+    if (params.class_id) q.set('class_id', params.class_id);
+    return this.request<any>(`/reports/analytics?${q.toString()}`);
+  }
+
+  async archiveTestRecordsForProduction(batchName?: string) {
+    const qs = batchName ? `?batch_name=${encodeURIComponent(batchName)}` : '';
+    return this.request<{
+      success: boolean;
+      archived_count: number;
+      batch_name: string;
+      message: string;
+    }>(`/reports/archive-test-records${qs}`, { method: 'POST' });
+  }
+
+  async listArchivedTestRecords() {
+    return this.request<Array<{
+      id: string;
+      archive_batch_name: string;
+      archived_at: string;
+      session_date: string;
+      class_name: string;
+      subject_name: string;
+      teacher_name: string;
+      roll_number: string;
+      student_name: string;
+      status: string;
+      entry_time_12h: string;
+      verification_method: string;
+      notes: string;
+    }>>('/reports/test-archives');
   }
 
   // CSV export: the old plain <a href> sent no Bearer token, so the

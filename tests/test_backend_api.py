@@ -94,8 +94,8 @@ async def test_student_crud_and_attendance():
         assert len(depts) > 0 and len(classes) > 0
         # Pick the real DAE CIT class by name (a DB seeded before the
         # fix may still hold the old BS CS dummy alongside it).
-        dae_classes = [c for c in classes if "DAE CIT" in c["name"]]
-        assert dae_classes, "Seed must contain DAE CIT classes, not the old BS CS dummy"
+        dae_classes = [c for c in classes if "CIT" in c["name"]]
+        assert dae_classes, "Seed must contain CIT classes, not the old BS CS dummy"
         dept_id = depts[0]["id"]
         class_id = dae_classes[0]["id"]
 
@@ -218,7 +218,7 @@ async def test_session_creation_validation():
         labs = (await client.get("/api/v1/sessions/laboratories", headers=headers)).json()
         classes = (await client.get("/api/v1/students/classes", headers=headers)).json()
         assert subjects and labs and classes
-        dae_classes = [c for c in classes if "DAE CIT" in c["name"]]
+        dae_classes = [c for c in classes if "CIT" in c["name"]]
         assert dae_classes
         day = f"2030-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
         base = {
@@ -265,7 +265,7 @@ async def test_corrections_review_flow():
         depts = (await client.get("/api/v1/students/departments", headers=headers)).json()
         classes = (await client.get("/api/v1/students/classes", headers=headers)).json()
         sessions = (await client.get("/api/v1/sessions", headers=headers)).json()
-        dae_classes = [c for c in classes if "DAE CIT" in c["name"]]
+        dae_classes = [c for c in classes if "CIT" in c["name"]]
         assert dae_classes
         stu = (await client.post("/api/v1/students", headers=headers, json={
             "roll_number": _uniq("TEST-CORR"), "full_name": "Correction Test",

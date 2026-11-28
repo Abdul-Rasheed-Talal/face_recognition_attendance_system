@@ -21,6 +21,27 @@ from backend.app.schemas.domain import (
 )
 from backend.app.api.v1.deps import require_teacher_or_admin
 
+def _as_utc(dt: datetime) -> datetime:
+    """Ensures SQLite naive UTC datetimes serialize with explicit +00:00/Z for browser local-time display."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _to_session_out(s: LabSession) -> SessionOut:
+    return SessionOut(
+        id=s.id,
+        subject_name=s.subject_title or (s.subject.name if s.subject else "Computer Lab"),
+        subject_code=s.subject.code if s.subject else "CIT-LAB",
+        laboratory_name=s.laboratory.name if s.laboratory else "CIT Computer Lab",
+        room_number=s.laboratory.room_number if s.laboratory else "CIT-LAB",
+        teacher_name=s.teacher_display_name or (s.teacher.full_name if s.teacher else ""),
+        class_name=s.class_group.name if s.class_group else "CIT Class",
+        start_time=_as_utc(s.start_time),
+        end_time=_as_utc(s.end_time),
+        late_grace_minutes=s.late_grace_minutes,
+        status=s.status,
+    )
+
+
 router = APIRouter(prefix="/sessions", tags=["Lab Sessions"])
 
 
@@ -107,23 +128,7 @@ async def list_sessions(
     res = await db.execute(query)
     sessions = res.scalars().all()
 
-    output = []
-    for s in sessions:
-        output.append(
-            SessionOut(
-                id=s.id,
-                subject_name=s.subject.name if s.subject else "Unknown Subject",
-                subject_code=s.subject.code if s.subject else "N/A",
-                laboratory_name=s.laboratory.name if s.laboratory else "Gate / Laboratory",
-                room_number=s.laboratory.room_number if s.laboratory else "N/A",
-                teacher_name=s.teacher.full_name if s.teacher else "Teacher",
-                class_name=s.class_group.name if s.class_group else "Class",
-                start_time=s.start_time,
-                end_time=s.end_time,
-                late_grace_minutes=s.late_grace_minutes,
-                status=s.status,
-            )
-        )
+    output = [_to_session_out(s) for s in sessions]
     return output
 
 
@@ -144,7 +149,7 @@ async def get_active_session(
         )
         .where(
             and_(
-                LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
+                LabSession.status.in_(["ACTIVE", "SCHEDULED", "RESCHEDULED"]),
                 LabSession.start_time <= now,
                 LabSession.end_time >= now,
             )
@@ -176,19 +181,7 @@ async def get_active_session(
     if not s:
         return None
 
-    return SessionOut(
-        id=s.id,
-        subject_name=s.subject.name if s.subject else "Unknown Subject",
-        subject_code=s.subject.code if s.subject else "N/A",
-        laboratory_name=s.laboratory.name if s.laboratory else "Unknown Lab",
-        room_number=s.laboratory.room_number if s.laboratory else "N/A",
-        teacher_name=s.teacher.full_name if s.teacher else "Unknown Teacher",
-        class_name=s.class_group.name if s.class_group else "Unknown Class",
-        start_time=s.start_time,
-        end_time=s.end_time,
-        late_grace_minutes=s.late_grace_minutes,
-        status=s.status,
-    )
+    return _to_session_out(s)
 
 
 @router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)

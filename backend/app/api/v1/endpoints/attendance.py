@@ -56,7 +56,7 @@ async def list_attendance(
                 student_id=r.student_id,
                 student_name=r.student.full_name if r.student else "Unknown",
                 roll_number=r.student.roll_number if r.student else "N/A",
-                timestamp=r.timestamp,
+                timestamp=r.timestamp if r.timestamp.tzinfo else r.timestamp.replace(tzinfo=timezone.utc),
                 status=r.status,
                 confidence_score=r.confidence_score,
                 verification_method=r.verification_method,
@@ -90,7 +90,7 @@ async def get_session_attendance(
                 student_id=r.student_id,
                 student_name=r.student.full_name if r.student else "Unknown",
                 roll_number=r.student.roll_number if r.student else "N/A",
-                timestamp=r.timestamp,
+                timestamp=r.timestamp if r.timestamp.tzinfo else r.timestamp.replace(tzinfo=timezone.utc),
                 status=r.status,
                 confidence_score=r.confidence_score,
                 verification_method=r.verification_method,
@@ -124,7 +124,7 @@ async def get_student_attendance_history(
                 student_id=r.student_id,
                 student_name=r.student.full_name if r.student else "Unknown",
                 roll_number=r.student.roll_number if r.student else "N/A",
-                timestamp=r.timestamp,
+                timestamp=r.timestamp if r.timestamp.tzinfo else r.timestamp.replace(tzinfo=timezone.utc),
                 status=r.status,
                 confidence_score=r.confidence_score,
                 verification_method=r.verification_method,
@@ -132,6 +132,33 @@ async def get_student_attendance_history(
             )
         )
     return output
+
+
+@router.post("/carry-forward/{session_id}")
+async def carry_forward_session_attendance(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_teacher_or_admin),
+):
+    """
+    Manually triggers attendance carry-forward from the immediately preceding
+    consecutive Computer Lab lecture for the same CIT class.
+    """
+    res = await db.execute(select(LabSession).where(LabSession.id == session_id))
+    session = res.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Lab session not found.")
+
+    count = await AttendanceService.carry_forward_from_previous_session(db, session)
+    return {
+        "success": True,
+        "carried_count": count,
+        "message": (
+            f"Carried forward {count} student(s) from the previous consecutive lecture."
+            if count > 0
+            else "No new students to carry forward (either already carried or no consecutive previous lecture for this class)."
+        ),
+    }
 
 
 @router.post("/manual", response_model=AttendanceRecordOut)

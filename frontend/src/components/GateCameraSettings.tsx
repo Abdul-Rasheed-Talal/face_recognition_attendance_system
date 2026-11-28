@@ -9,20 +9,16 @@ import {
   Activity,
   Sliders,
 } from 'lucide-react';
-import { CameraHealth, User } from '../types';
+import { CameraHealth } from '../types';
 import { api } from '../services/api';
 
 interface GateCameraSettingsProps {
-  currentUser: User | null;
   cameraHealth?: CameraHealth;
-  onOpenLogin: () => void;
   onRefresh?: () => void;
 }
 
 export const GateCameraSettings: React.FC<GateCameraSettingsProps> = ({
-  currentUser,
   cameraHealth,
-  onOpenLogin,
   onRefresh,
 }) => {
   const [sourceType, setSourceType] = useState<'hikvision' | 'webcam' | 'rtsp'>('hikvision');
@@ -73,10 +69,6 @@ export const GateCameraSettings: React.FC<GateCameraSettingsProps> = ({
 
   const handleApplyConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
-      onOpenLogin();
-      return;
-    }
     setIsSaving(true);
     setSaveMessage(null);
     try {

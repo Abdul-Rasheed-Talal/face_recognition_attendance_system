@@ -33,6 +33,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [streamKey, setStreamKey] = useState(Date.now());
   const [mode, setMode] = useState<'stream' | 'snapshot'>('stream');
   const [snapshotSrc, setSnapshotSrc] = useState<string>('');
+  const streamImgRef = React.useRef<HTMLImageElement | null>(null);
+
+  // Explicitly abort MJPEG TCP connection when leaving Gate Monitor tab
+  useEffect(() => {
+    return () => {
+      if (streamImgRef.current) {
+        streamImgRef.current.src = '';
+      }
+    };
+  }, []);
 
   const camHealth = stats?.camera_health;
   const isCamConnected = camHealth?.camera_connected ?? false;
@@ -74,8 +84,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner: Instant Recognition Live Alert */}
-      {latestEvent ? (
+      {/* Top Banner: Instant Recognition Live Alert or Anti-Spoof Warning */}
+      {latestEvent && latestEvent.type === 'SPOOF_ALERT' ? (
+        <div className="p-4 rounded-2xl border bg-rose-50 border-rose-300 text-rose-900 transition-all duration-300 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-800">
+                  Spoof Attempt Blocked
+                </span>
+                <span className="text-[11px] opacity-75">
+                  ({new Date(latestEvent.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })})
+                </span>
+              </div>
+              <div className="text-sm font-semibold mt-0.5">
+                {(latestEvent as any).reason || 'Fake picture, poster, or phone screen detected — attendance was NOT marked.'}
+              </div>
+            </div>
+          </div>
+          <span className="text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider bg-rose-200 text-rose-900">
+            BLOCKED
+          </span>
+        </div>
+      ) : latestEvent && latestEvent.type === 'ATTENDANCE_RECORDED' ? (
         <div
           className={`p-4 rounded-2xl border transition-all duration-300 shadow-xs flex items-center justify-between ${
             latestEvent.status === 'LATE'
@@ -103,7 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {latestEvent.status === 'LATE' ? 'Late Arrival Marked' : 'Attendance Verified'}
                 </span>
                 <span className="text-[11px] opacity-75">
-                  ({new Date(latestEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})
+                  ({new Date(latestEvent.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })})
                 </span>
               </div>
               <div className="text-sm font-bold mt-0.5">
@@ -229,6 +263,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Video Container */}
           <div className="relative bg-stone-900 aspect-video flex items-center justify-center overflow-hidden">
             <img
+              ref={streamImgRef}
               key={streamKey}
               src={displaySrc}
               alt="Gate Camera Feed"
@@ -271,8 +306,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>•</span>
               <span>Inference FPS: <strong className="text-stone-700">{camHealth?.processing_fps || 10} FPS</strong></span>
             </div>
-            <div className="text-stone-500">
-              Face Recognition: <span className="text-stone-700 font-medium">YuNet + SFace (ONNX)</span>
+            <div className="text-stone-500 flex items-center gap-3">
+              <span>Anti-Spoof: <strong className="text-emerald-700">Active</strong></span>
+              <span>•</span>
+              <span>Engine: <span className="text-stone-700 font-medium">YuNet + SFace</span></span>
             </div>
           </div>
         </div>
@@ -302,8 +339,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="text-stone-500 flex items-center gap-2 text-[11px]">
                   <Clock className="w-3.5 h-3.5 text-stone-400" />
                   <span>
-                    {new Date(activeSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
-                    {new Date(activeSession.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(activeSession.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} -{' '}
+                    {new Date(activeSession.end_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                   </span>
                   <span>(Grace: {activeSession.late_grace_minutes}m)</span>
                 </div>
@@ -367,7 +404,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {evt.status === 'LATE' ? 'Late' : 'On-Time'}
                       </span>
                       <div className="text-[10px] text-stone-400 mt-0.5 font-mono">
-                        {new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(evt.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                       </div>
                     </div>
                   </div>

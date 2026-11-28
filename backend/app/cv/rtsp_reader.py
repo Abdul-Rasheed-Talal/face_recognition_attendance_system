@@ -38,6 +38,8 @@ class VideoStreamReader:
 
         # Thread synchronization
         self._lock = threading.Lock()
+        self._frame_cond = threading.Condition(self._lock)
+        self._frame_seq: int = 0
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
@@ -140,6 +142,20 @@ class VideoStreamReader:
                 return False, None, 0.0
             return True, self._latest_frame.copy(), self._last_frame_timestamp
 
+    def wait_for_new_frame(
+        self, last_seq: int, timeout: float = 0.25
+    ) -> Tuple[int, Optional[np.ndarray]]:
+        """
+        Event-driven wait for the next newly captured camera frame (zero polling jitter).
+        Returns (new_seq, frame_copy) or (last_seq, None) on timeout.
+        """
+        with self._frame_cond:
+            if self._frame_seq == last_seq:
+                self._frame_cond.wait(timeout=timeout)
+            if self._latest_frame is None:
+                return self._frame_seq, None
+            return self._frame_seq, self._latest_frame.copy()
+
     def get_health_status(self) -> CameraHealthStatus:
         """Returns snapshot telemetry of the camera connection and reader state."""
         with self._lock:
@@ -163,7 +179,7 @@ class VideoStreamReader:
         # Enforce TCP transport for RTSP streams to eliminate UDP packet tearing
         if isinstance(self.source, str) and self.source.startswith("rtsp://"):
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                f"rtsp_transport;{self.rtsp_transport}|fflags;nobuffer|max_delay;500000|stimeout;5000000"
+                f"rtsp_transport;{self.rtsp_transport}|fflags;nobuffer|flags;low_delay|max_delay;100000|stimeout;4000000"
             )
             cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
         else:
@@ -213,11 +229,13 @@ class VideoStreamReader:
                     if not ret or frame is None:
                         continue
 
-                    # Store atomically
-                    with self._lock:
+                    # Store atomically and wake waiting stream consumers immediately
+                    with self._frame_cond:
                         self._latest_frame = frame
                         self._last_frame_timestamp = now
+                        self._frame_seq += 1
                         self._frame_counter += 1
+                        self._frame_cond.notify_all()
 
                         # Periodic FPS update
                         elapsed = now - self._fps_window_start

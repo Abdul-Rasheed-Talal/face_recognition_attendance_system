@@ -52,99 +52,114 @@ logger = logging.getLogger("fras_backend")
 
 
 async def seed_initial_fixtures():
-    """Seeds default institutional data if database is empty."""
+    """
+    Ensures the production CIT Department Computer Lab structure exists:
+    - CIT Department (Computer Information Technology)
+    - 3 Classes: CIT 1st Year, CIT 2nd Year, CIT 3rd Year
+    - CIT Computer Lab & internal local operator (no login/signup, no dummy data)
+    """
     async with AsyncSessionLocal() as db:
-        # Check if users exist
-        user_res = await db.execute(select(User))
-        if user_res.scalars().first() is None:
-            logger.info("Database empty: seeding initial institutional fixtures...")
-            
-            # Default Admin
-            admin = User(
-                email="admin@college.edu",
-                password_hash=hash_password("AdminPass123!"),
-                full_name="System Administrator",
-                role="ADMIN",
-                is_active=True,
-            )
-            # Default Teacher
-            teacher = User(
-                email="prof.smith@college.edu",
-                password_hash=hash_password("TeacherPass123!"),
-                full_name="Prof. John Smith",
-                role="TEACHER",
-                is_active=True,
-            )
-            db.add_all([admin, teacher])
-            await db.flush()
-
-            # Department & real classes (DAE CIT — the BS CS 2023 class that
-            # used to be seeded here was a dummy and is gone).
-            dept = Department(code="CIT", name="Computer Information Technology (DAE CIT)")
-            db.add(dept)
-            await db.flush()
-
-            class_groups = []
-            for year, semester in (
-                ("1st Year", "1st Semester"),
-                ("2nd Year", "3rd Semester"),
-                ("3rd Year", "5th Semester"),
-            ):
-                class_grp = ClassGroup(
-                    department_id=dept.id,
-                    name=f"DAE CIT {year}",
-                    year=year,
-                    semester=semester,
-                    section="A",
+        # 1. Internal local operator (only for DB foreign key constraints — no login UI)
+        op_res = await db.execute(select(User).limit(1))
+        if op_res.scalars().first() is None:
+            db.add(
+                User(
+                    email="operator@cit.lab.local",
+                    password_hash="local-no-auth",
+                    full_name="CIT Lab Operator",
+                    role="ADMIN",
+                    is_active=True,
                 )
-                db.add(class_grp)
-                class_groups.append(class_grp)
+            )
             await db.flush()
 
-            # Subject & Lab (the lab whose gate the camera sits above)
-            subject = Subject(
-                department_id=dept.id,
-                code="CIT-LAB",
-                name="Computer Applications Lab",
-            )
+        # 2. CIT Department (upgrade legacy CS dummy department if present)
+        dept = (await db.execute(select(Department).where(Department.code == "CIT"))).scalars().first()
+        if dept is None:
+            legacy_dept = (await db.execute(select(Department).where(Department.code == "CS"))).scalars().first()
+            if legacy_dept is not None:
+                legacy_dept.code = "CIT"
+                legacy_dept.name = "Computer Information Technology (CIT)"
+                dept = legacy_dept
+            else:
+                dept = Department(code="CIT", name="Computer Information Technology (CIT)")
+                db.add(dept)
+            await db.flush()
+
+        # 3. Exactly 3 CIT classes: CIT 1st Year, CIT 2nd Year, CIT 3rd Year
+        # Upgrade any legacy 'BS CS 2023' or 'DAE CIT X' names cleanly
+        existing_classes = (await db.execute(select(ClassGroup).where(ClassGroup.department_id == dept.id))).scalars().all()
+        for c in existing_classes:
+            if c.name == "BS CS 2023":
+                c.name = "CIT 3rd Year"
+                c.year = "3rd Year"
+                c.semester = "Annual"
+                c.section = "A"
+            elif c.name.startswith("DAE CIT "):
+                c.name = c.name.replace("DAE CIT ", "CIT ")
+
+        await db.flush()
+        existing_names = {c.name for c in existing_classes}
+
+        for cname, cyear in (
+            ("CIT 1st Year", "1st Year"),
+            ("CIT 2nd Year", "2nd Year"),
+            ("CIT 3rd Year", "3rd Year"),
+        ):
+            if cname not in existing_names:
+                db.add(
+                    ClassGroup(
+                        department_id=dept.id,
+                        name=cname,
+                        year=cyear,
+                        semester="Annual",
+                        section="A",
+                    )
+                )
+        await db.flush()
+
+        # 4. CIT Computer Lab & General Lab Subject placeholder
+        lab = (await db.execute(select(Laboratory).limit(1))).scalars().first()
+        if lab is None:
             lab = Laboratory(
-                name="DAE CIT Laboratory",
-                room_number="LAB-CIT-01",
-                building="Main Block",
-                capacity=40,
+                name="CIT Computer Lab",
+                room_number="CIT-LAB",
+                building="CIT Department",
+                capacity=60,
             )
-            db.add_all([subject, lab])
+            db.add(lab)
+            await db.flush()
+        elif lab.name == "Computer Laboratory 01":
+            lab.name = "CIT Computer Lab"
+            lab.room_number = "CIT-LAB"
+            lab.building = "CIT Department"
+
+        subj = (await db.execute(select(Subject).where(Subject.code == "CIT-LAB"))).scalars().first()
+        if subj is None:
+            legacy_subj = (await db.execute(select(Subject).where(Subject.code == "CS-301"))).scalars().first()
+            if legacy_subj is not None:
+                legacy_subj.code = "CIT-LAB"
+                legacy_subj.name = "Computer Lab"
+            else:
+                db.add(Subject(department_id=dept.id, code="CIT-LAB", name="Computer Lab"))
             await db.flush()
 
-            # Camera device
-            cam = CameraDevice(
-                laboratory_id=lab.id,
-                name="Lab Gate Camera",
-                rtsp_url=str(settings.effective_camera_source),
-                status="OFFLINE",
+        # 5. Gate IP Camera device record
+        cam = (await db.execute(select(CameraDevice).limit(1))).scalars().first()
+        if cam is None:
+            db.add(
+                CameraDevice(
+                    laboratory_id=lab.id,
+                    name="CIT Lab Entrance IP Camera",
+                    rtsp_url=str(settings.effective_camera_source),
+                    ip_address=settings.HIKVISION_IP,
+                    status="OFFLINE",
+                    is_active=True,
+                )
             )
-            db.add(cam)
 
-            # One SCHEDULED session for DAE CIT 1st Year so the timetable
-            # is not empty on a fresh install. It is SCHEDULED, not ACTIVE:
-            # the old seed created an ACTIVE session spanning now +/- 2 h on
-            # every fresh DB, and the session matcher would happily absorb
-            # students from the wrong class into it.
-            now = datetime.now(timezone.utc)
-            session = LabSession(
-                subject_id=subject.id,
-                laboratory_id=lab.id,
-                teacher_id=teacher.id,
-                class_id=class_groups[0].id,
-                start_time=now - timedelta(minutes=10),
-                end_time=now + timedelta(hours=2),
-                late_grace_minutes=15,
-                status="SCHEDULED",
-            )
-            db.add(session)
-
-            await db.commit()
-            logger.info("Initial institutional fixtures created successfully.")
+        await db.commit()
+        logger.info("CIT Department Computer Lab structure verified (CIT 1st, 2nd, 3rd Year).")
 
 
 @asynccontextmanager
@@ -223,9 +238,16 @@ async def lifespan(app: FastAPI):
     def on_attendance_candidate(event: AttendanceCandidateEvent):
         """Dispatches verified CV event into async database persistence."""
         async def _persist():
-            async with AsyncSessionLocal() as db:
-                await AttendanceService.process_candidate_event(db, event)
+            try:
+                async with AsyncSessionLocal() as db:
+                    await AttendanceService.process_candidate_event(db, event)
+            except Exception as exc:
+                logger.error(f"Failed persisting attendance event for {event.student_name}: {exc}", exc_info=True)
         asyncio.run_coroutine_threadsafe(_persist(), main_loop)
+
+    def on_spoof_detected(alert: dict):
+        """Broadcasts real-time anti-spoofing alert to the Gate Monitor dashboard."""
+        asyncio.run_coroutine_threadsafe(ws_manager.broadcast_json(alert), main_loop)
 
     # 6. Build recognition engine
     engine_cv = VisionRecognitionEngine(
@@ -241,6 +263,7 @@ async def lifespan(app: FastAPI):
         require_line_crossing=settings.CV_REQUIRE_LINE_CROSSING,
         recognition_every_n_frames=settings.CV_RECOGNITION_EVERY_N_FRAMES,
         on_attendance_event=on_attendance_candidate,
+        on_spoof_event=on_spoof_detected,
     )
 
     # 7. Initialize enrollment service with dedicated CV models to eliminate any thread contention with the video loop

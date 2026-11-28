@@ -42,7 +42,7 @@ class AttendanceService:
         res = await db.execute(
             select(LabSession).where(
                 and_(
-                    LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
+                    LabSession.status.in_(["ACTIVE", "SCHEDULED", "RESCHEDULED"]),
                     LabSession.end_time < cutoff,
                 )
             )
@@ -69,15 +69,22 @@ class AttendanceService:
         so a DAE CIT 1st-year student could be marked in a 3rd-year class.
         """
         now = current_time or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        # Auto-sync today's weekly timetable slots into LabSession rows
+        from backend.app.api.v1.endpoints.timetable import sync_sessions_for_date
+        await sync_sessions_for_date(db)
         await AttendanceService.auto_close_expired_sessions(db, now)
 
+        # IMPORTANT: Do timedelta arithmetic on Python `now`, NOT on SQLite column
+        # `LabSession.start_time` (SQLite cannot subtract timedelta from TEXT datetimes).
         query = (
             select(LabSession)
             .where(
                 and_(
                     LabSession.class_id == student.class_id,
-                    LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
-                    LabSession.start_time - timedelta(minutes=45) <= now,
+                    LabSession.status.in_(["ACTIVE", "SCHEDULED", "RESCHEDULED"]),
+                    LabSession.start_time <= now + timedelta(minutes=45),
                     LabSession.end_time >= now - timedelta(minutes=10),
                 )
             )
@@ -87,21 +94,116 @@ class AttendanceService:
         return res.scalars().first()
 
     @staticmethod
+    async def carry_forward_from_previous_session(
+        db: AsyncSession,
+        target_session: LabSession,
+        max_gap_minutes: int = 15,
+    ) -> int:
+        """
+        Handles back-to-back lectures for the SAME CIT class in Computer Lab-1
+        (when Teacher 1 leaves and Teacher 2 starts the next lecture while students
+        remain seated in the lab without re-entering through the gate).
+
+        Finds an immediately preceding session for the same class whose end_time is
+        within `max_gap_minutes` of `target_session.start_time` (ignoring breaks > 15m
+        and cancelled sessions) and copies all PRESENT/LATE students as PRESENT
+        (verification_method='CARRIED_FORWARD'), skipping anyone already recorded.
+        """
+        if target_session.status == "CANCELLED":
+            return 0
+
+        st = (
+            target_session.start_time
+            if target_session.start_time.tzinfo
+            else target_session.start_time.replace(tzinfo=timezone.utc)
+        )
+        window_start = st - timedelta(minutes=max_gap_minutes)
+        window_end = st + timedelta(minutes=5)
+
+        prev_res = await db.execute(
+            select(LabSession)
+            .options(selectinload(LabSession.subject))
+            .where(
+                and_(
+                    LabSession.id != target_session.id,
+                    LabSession.class_id == target_session.class_id,
+                    LabSession.status != "CANCELLED",
+                    LabSession.end_time >= window_start,
+                    LabSession.end_time <= window_end,
+                )
+            )
+            .order_by(LabSession.end_time.desc())
+        )
+        prev_session = prev_res.scalars().first()
+        if prev_session is None:
+            return 0
+
+        # Fetch PRESENT/LATE students from the previous consecutive lecture
+        prev_att_res = await db.execute(
+            select(AttendanceRecord).where(
+                and_(
+                    AttendanceRecord.session_id == prev_session.id,
+                    AttendanceRecord.status.in_(["PRESENT", "LATE"]),
+                )
+            )
+        )
+        prev_records = prev_att_res.scalars().all()
+        if not prev_records:
+            return 0
+
+        # Check who already has a record in target_session (idempotent)
+        existing_res = await db.execute(
+            select(AttendanceRecord.student_id).where(
+                AttendanceRecord.session_id == target_session.id
+            )
+        )
+        already_recorded = set(existing_res.scalars().all())
+
+        prev_title = prev_session.subject_title or (prev_session.subject.name if prev_session.subject else "previous lecture")
+        now_utc = datetime.now(timezone.utc)
+        created = 0
+
+        for rec in prev_records:
+            if rec.student_id in already_recorded:
+                continue
+            db.add(
+                AttendanceRecord(
+                    session_id=target_session.id,
+                    student_id=rec.student_id,
+                    timestamp=now_utc,
+                    status="PRESENT",
+                    confidence_score=rec.confidence_score,
+                    verification_method="CARRIED_FORWARD",
+                    notes=f"Auto-carried forward from consecutive lab lecture ({prev_title})",
+                )
+            )
+            created += 1
+
+        if created > 0:
+            await db.commit()
+            logger.info(
+                f"CARRY-FORWARD: Carried {created} student(s) from '{prev_title}' into consecutive session {target_session.id}."
+            )
+        return created
+
+    @staticmethod
     async def get_active_session_for_lab(
         db: AsyncSession, laboratory_id: Optional[str] = None
     ) -> Optional[LabSession]:
         """
         Finds currently active session across the timetable for dashboard display.
-        Matches by status='ACTIVE' or current UTC time within (start_time, end_time).
+        Also auto-carries forward attendance when a back-to-back same-class lecture begins.
         """
         now = datetime.now(timezone.utc)
+        from backend.app.api.v1.endpoints.timetable import sync_sessions_for_date
+        await sync_sessions_for_date(db)
         # Close sessions that ended hours ago so the ACTIVE fallback below
         # cannot resurrect a stale one.
         await AttendanceService.auto_close_expired_sessions(db, now)
         query = select(LabSession).where(
             and_(
-                LabSession.status.in_(["ACTIVE", "SCHEDULED"]),
-                LabSession.start_time - timedelta(minutes=15) <= now,
+                LabSession.status.in_(["ACTIVE", "SCHEDULED", "RESCHEDULED"]),
+                LabSession.start_time <= now + timedelta(minutes=15),
                 LabSession.end_time >= now,
             )
         ).order_by(LabSession.start_time.asc())
@@ -110,6 +212,12 @@ class AttendanceService:
 
         result = await db.execute(query)
         session = result.scalars().first()
+
+        # Auto-carry forward once the consecutive session has actually started
+        if session is not None:
+            st = session.start_time if session.start_time.tzinfo else session.start_time.replace(tzinfo=timezone.utc)
+            if now >= st:
+                await AttendanceService.carry_forward_from_previous_session(db, session)
 
         # If no strict time match, check if any session is explicitly flagged ACTIVE
         if session is None:
@@ -190,8 +298,15 @@ class AttendanceService:
             logger.info(f"Student {student.roll_number} already recorded for session {loaded_session.id}. Suppressing duplicate.")
             return existing
 
-        # 4. Determine PRESENT vs LATE status
-        late_cutoff = loaded_session.start_time + timedelta(minutes=loaded_session.late_grace_minutes)
+        # 4. Determine PRESENT vs LATE status (normalize naive SQLite UTC datetimes safely)
+        if crossing_dt.tzinfo is None:
+            crossing_dt = crossing_dt.replace(tzinfo=timezone.utc)
+        sess_start_utc = (
+            loaded_session.start_time
+            if loaded_session.start_time.tzinfo is not None
+            else loaded_session.start_time.replace(tzinfo=timezone.utc)
+        )
+        late_cutoff = sess_start_utc + timedelta(minutes=loaded_session.late_grace_minutes)
 
         if crossing_dt <= late_cutoff:
             status = "PRESENT"
@@ -230,7 +345,7 @@ class AttendanceService:
             return existing_res.scalars().first()
         await db.refresh(record)
 
-        subject_title = loaded_session.subject.name if loaded_session.subject else "Class Period"
+        subject_title = loaded_session.subject_title or (loaded_session.subject.name if loaded_session.subject else "Computer Lab")
         class_label = loaded_session.class_group.name if loaded_session.class_group else (student.class_group.name if student.class_group else "Section")
 
         logger.info(

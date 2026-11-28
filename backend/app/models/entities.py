@@ -150,6 +150,27 @@ class FaceTemplate(Base):
     student = relationship("Student", back_populates="face_templates")
 
 
+class TimetableSlot(Base):
+    """
+    Recurring weekly Computer Lab timetable template for CIT classes.
+    Auto-generates daily LabSession entries and can be altered at any time.
+    """
+    __tablename__ = "timetable_slots"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    day_of_week = Column(Integer, nullable=False, index=True)  # 0=Monday .. 5=Saturday, 6=Sunday
+    class_id = Column(String(36), ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_name = Column(String(120), nullable=False)
+    teacher_name = Column(String(100), nullable=False, default="")
+    start_time_str = Column(String(5), nullable=False)  # "08:30" (24h local time)
+    end_time_str = Column(String(5), nullable=False)    # "10:00"
+    late_grace_minutes = Column(Integer, default=15)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now)
+
+    class_group = relationship("ClassGroup")
+
+
 class LabSession(Base):
     __tablename__ = "lab_sessions"
 
@@ -161,7 +182,11 @@ class LabSession(Base):
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
     late_grace_minutes = Column(Integer, default=15)
-    status = Column(String(20), default="SCHEDULED")  # SCHEDULED, ACTIVE, COMPLETED, CANCELLED
+    status = Column(String(20), default="SCHEDULED")  # SCHEDULED, ACTIVE, COMPLETED, CANCELLED, RESCHEDULED
+    timetable_slot_id = Column(String(36), nullable=True, index=True)
+    subject_title = Column(String(120), nullable=True)
+    teacher_display_name = Column(String(100), nullable=True)
+    status_note = Column(Text, nullable=True)
 
     subject = relationship("Subject", back_populates="sessions")
     laboratory = relationship("Laboratory", back_populates="sessions")
@@ -210,6 +235,27 @@ class AttendanceCorrectionRequest(Base):
     student = relationship("Student", back_populates="correction_requests")
     session = relationship("LabSession")
     reviewed_by = relationship("User")
+
+
+class ArchivedTestRecord(Base):
+    """
+    Preserves archived test attendance records when resetting the system for production deployment.
+    """
+    __tablename__ = "archived_test_records"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    archive_batch_name = Column(String(120), nullable=False, index=True)
+    archived_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    session_date = Column(String(20), nullable=False)
+    class_name = Column(String(80), nullable=False)
+    subject_name = Column(String(120), nullable=False)
+    teacher_name = Column(String(100), nullable=True)
+    roll_number = Column(String(40), nullable=False)
+    student_name = Column(String(120), nullable=False)
+    status = Column(String(30), nullable=False)
+    entry_time = Column(DateTime(timezone=True), nullable=False)
+    verification_method = Column(String(30), nullable=True)
+    notes = Column(Text, nullable=True)
 
 
 class AuditLog(Base):

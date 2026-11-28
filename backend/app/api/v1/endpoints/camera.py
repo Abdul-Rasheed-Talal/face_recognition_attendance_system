@@ -321,26 +321,48 @@ async def configure_camera(config: CameraConfigUpdate, request: Request):
     }
 
 
-def generate_mjpeg_stream(engine):
-    """Yields multipart MJPEG frames with explicit Content-Length for browser streaming."""
-    while True:
-        frame_bytes = engine.get_annotated_frame_jpeg()
-        if frame_bytes is not None:
-            length = str(len(frame_bytes)).encode("ascii")
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + length + b"\r\n\r\n"
-                + frame_bytes + b"\r\n"
-            )
-        time.sleep(0.06)  # ~16 FPS fluid live preview with low network and CPU overhead
+async def generate_mjpeg_stream(engine, request: Request, raw: bool = False):
+    """
+    Async, disconnect-aware 25-30 FPS multipart MJPEG generator.
+    Checks `request.is_disconnected()` on every frame so switching tabs or closing
+    modals immediately frees the TCP socket and never exhausts the browser's
+    6-connection HTTP/1.1 pool.
+    """
+    loop = asyncio.get_running_loop()
+    last_seq = -1
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+
+            if raw:
+                last_seq, frame_bytes = await loop.run_in_executor(
+                    None, engine.get_next_raw_jpeg, last_seq, 0.25
+                )
+            else:
+                last_seq, frame_bytes = await loop.run_in_executor(
+                    None, engine.get_next_annotated_jpeg, last_seq, 0.25
+                )
+
+            if await request.is_disconnected():
+                break
+
+            if frame_bytes is not None:
+                length = str(len(frame_bytes)).encode("ascii")
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + length + b"\r\n\r\n"
+                    + frame_bytes + b"\r\n"
+                )
+    except (asyncio.CancelledError, GeneratorExit, ConnectionResetError, BrokenPipeError):
+        return
 
 
 @router.get("/stream")
 async def live_camera_mjpeg_stream(request: Request):
     """
-    Live MJPEG stream with detection bounding boxes, tracking trajectories,
-    and entry boundary overlays for dashboard monitoring.
+    Smooth 25-30 FPS Live MJPEG stream with detection bounding boxes and spoof alerts.
     """
     engine = getattr(request.app.state, "recognition_engine", None)
     if not engine:
@@ -355,7 +377,31 @@ async def live_camera_mjpeg_stream(request: Request):
         "Connection": "close",
     }
     return StreamingResponse(
-        generate_mjpeg_stream(engine),
+        generate_mjpeg_stream(engine, request, raw=False),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers=headers,
+    )
+
+
+@router.get("/raw-stream")
+async def live_camera_raw_mjpeg_stream(request: Request):
+    """
+    Smooth 25-30 FPS clean unannotated MJPEG stream for Student Live Photo Capture.
+    """
+    engine = getattr(request.app.state, "recognition_engine", None)
+    if not engine:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Recognition engine is not running.",
+        )
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate, pre-check=0, post-check=0, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "Connection": "close",
+    }
+    return StreamingResponse(
+        generate_mjpeg_stream(engine, request, raw=True),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers=headers,
     )

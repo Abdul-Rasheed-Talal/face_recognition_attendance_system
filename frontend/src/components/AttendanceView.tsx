@@ -32,6 +32,8 @@ export const AttendanceView: React.FC = () => {
   // Manual Check-In for student
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [checkInStudentId, setCheckInStudentId] = useState('');
+  const [carryNotice, setCarryNotice] = useState<string | null>(null);
+  const [isCarrying, setIsCarrying] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -117,6 +119,23 @@ export const AttendanceView: React.FC = () => {
     }
   };
 
+  const handleCarryForward = async () => {
+    if (!selectedSessionId) return;
+    setIsCarrying(true);
+    setCarryNotice(null);
+    try {
+      const res = await api.carryForwardAttendance(selectedSessionId);
+      setCarryNotice(res.message);
+      const attList = await api.listAttendance({ session_id: selectedSessionId });
+      setRecords(attList);
+      setTimeout(() => setCarryNotice(null), 4500);
+    } catch (e: any) {
+      setCarryNotice(e.message || 'Could not carry forward attendance.');
+    } finally {
+      setIsCarrying(false);
+    }
+  };
+
   const handleExportCsv = async () => {
     setExportError(null);
     setIsExporting(true);
@@ -166,7 +185,15 @@ export const AttendanceView: React.FC = () => {
           </select>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end flex-wrap">
+          <button
+            onClick={handleCarryForward}
+            disabled={!selectedSessionId || isCarrying}
+            title="Copy present students from the immediately preceding lecture for the same class"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-700 rounded-xl text-xs font-semibold border border-stone-200 transition cursor-pointer disabled:opacity-50"
+          >
+            <span>{isCarrying ? 'Carrying...' : 'Carry Forward Prev. Lecture'}</span>
+          </button>
           <button
             onClick={() => setIsCheckInModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-semibold border border-stone-200 transition cursor-pointer"
@@ -227,6 +254,12 @@ export const AttendanceView: React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {carryNotice && (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium">
+          {carryNotice}
         </div>
       )}
 
@@ -296,11 +329,17 @@ export const AttendanceView: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 font-medium text-stone-800">{rec.student_name}</td>
                       <td className="py-3 px-4 text-stone-600 font-mono text-[11px]">
-                        {new Date(rec.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        {new Date(rec.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}
                       </td>
                       <td className="py-3 px-4 text-stone-600">
-                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-700 text-[10px] font-mono border border-stone-200">
-                          {rec.verification_method}
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                            rec.verification_method === 'CARRIED_FORWARD'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+                              : 'bg-stone-100 text-stone-700 border-stone-200'
+                          }`}
+                        >
+                          {rec.verification_method === 'CARRIED_FORWARD' ? 'CARRIED FORWARD' : rec.verification_method}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-stone-600 font-mono text-[11px]">
